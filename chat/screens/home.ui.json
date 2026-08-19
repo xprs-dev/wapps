@@ -207,28 +207,6 @@
             "tip": "Images at or below this size download automatically."
           }
         ]
-      },
-      {
-        "$": "group",
-        "name": "identity_broadcast",
-        "tip": "Periodically broadcast your public key so others can message you encrypted.",
-        "children": [
-          {
-            "$": "field",
-            "name": "pubkey_beacon",
-            "$type": "bool",
-            "label": "Broadcast my public key",
-            "default": true,
-            "tip": "Every 30 min, send your profile's public key as a bulletin so peers can message you encrypted."
-          },
-          {
-            "$": "action",
-            "name": "pubkey_apply",
-            "label": "Apply key broadcast",
-            "style": "primary",
-            "tip": "Save the setting above and send one broadcast now."
-          }
-        ]
       }
     ]
   }

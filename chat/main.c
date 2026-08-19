@@ -333,12 +333,9 @@ static void rns_tx_bulletin(const char *to, const char *text);
  * never changes, so the rate is low. ON by default; the user can disable it in
  * Settings (persisted to KV). Receivers base64url-decode it back to 32 bytes.
  */
-#define PKBEACON_GROUP    "NOSTR"
-#define PKBEACON_INTERVAL 3600            /* seconds (hourly) */
 #define RNS_PULL_INTERVAL 20              /* seconds: pull store-and-forwarded 1:1 mail */
 static char  g_pubkey[80] = "";           /* our pubkey (base64url), cached at init */
-static int   g_pubkey_beacon = 1;         /* broadcast it? (default on) */
-static uint64_t g_last_pkbeacon = 0;
+static uint64_t g_last_identpub = 0;   /* relay identity publish cadence */
 static uint64_t g_last_rnspull = 0;
 
 /* ── Message signing (XPRS verifiable authorship) ────────────────────────
@@ -2190,70 +2187,20 @@ static void cpriv_set(const char *call, int on) {
  * A NOSTR beacon from a station we don't (yet) interact with is parked in a
  * small in-memory pending cache; the moment we interact with that callsign it is
  * promoted into the persistent store. Interaction noticed first, beacon later,
- * works too: the callsign is marked "wanted" and the next beacon stores it. */
+ * works too: the key arrives when the relay resolve answers. */
 #define PEER_MAX 64
 static char g_peer[PEER_MAX][16];          /* callsigns we interact with */
 static int  g_peer_n = 0;
-#define PEND_MAX 24
-static char g_pend_call[PEND_MAX][16];     /* heard-but-not-yet-wanted keys */
-static char g_pend_key[PEND_MAX][48];
-static int  g_pend_n = 0;
-static int  g_pend_head = 0;               /* ring write cursor */
-
 static int peer_known(const char *call) {
   for (int i = 0; i < g_peer_n; i++) if (s_eq(g_peer[i], call)) return 1;
   return 0;
 }
-static const char *pend_get(const char *call) {
-  for (int i = 0; i < g_pend_n; i++) if (s_eq(g_pend_call[i], call)) return g_pend_key[i];
-  return 0;
-}
-static void pend_set(const char *call, const char *key) {
-  for (int i = 0; i < g_pend_n; i++) if (s_eq(g_pend_call[i], call)) {
-    s_cpy(g_pend_key[i], key, sizeof(g_pend_key[0])); return;
-  }
-  int slot = (g_pend_n < PEND_MAX) ? g_pend_n++ : g_pend_head;   /* ring-evict oldest */
-  g_pend_head = (g_pend_head + 1) % PEND_MAX;
-  s_cpy(g_pend_call[slot], call, sizeof(g_pend_call[0]));
-  s_cpy(g_pend_key[slot], key, sizeof(g_pend_key[0]));
-}
-/* Note that we interact with [call]: remember it and, if its key was parked,
- * promote it to the persistent store now. */
+/* Note that we interact with [call]. Keys arrive through the relay resolve
+ * path (resolve_drain) -- the parked-key table that used to sit here fed off
+ * the removed #NOSTR pubkey bulletin. */
 static void peer_note(const char *call) {
   if (!call[0] || call[0] == '#' || s_eq(call, g_call)) return;
   if (!peer_known(call) && g_peer_n < PEER_MAX) s_cpy(g_peer[g_peer_n++], call, 16);
-  const char *k = pend_get(call);
-  if (k && !pk_get(call)) pk_store(call, k);
-}
-/* Intercept a NOSTR key beacon (group "NOSTR"): record from->pubkey only for
- * callsigns we interact with (others are parked); report it was handled so it is
- * never shown as a chat message. */
-static int pk_intercept(const char *group, const char *from, const char *text) {
-  if (!s_eq(group, "NOSTR")) return 0;
-  /* Extended beacon "<npub>|<rns-deliv-hex>|<rns-prop-hex>"; legacy forms are
-   * "<npub>|<deliv>" and just "<npub>". deliv = where we send_to this user; prop =
-   * its propagation mailbox we pull store-and-forwarded messages from (the NAT-
-   * tolerant path: WE initiate the pull). Learn both keyed by npub (all devices). */
-  char npub[48] = "", deliv[40] = "", prop[40] = "";
-  { int fld = 0, j = 0;
-    for (int i = 0; ; i++) {
-      char c = text[i];
-      if (c == '|' || c == 0) {
-        if (fld == 0) npub[j < 47 ? j : 47] = 0;
-        else if (fld == 1) deliv[j < 39 ? j : 39] = 0;
-        else if (fld == 2) { prop[j < 39 ? j : 39] = 0; }
-        if (c == 0 || fld >= 2) break;
-        fld++; j = 0; continue;
-      }
-      if (fld == 0) { if (j < 47) npub[j++] = c; }
-      else if (fld == 1) { if (j < 39) deliv[j++] = c; }
-      else { if (j < 39) prop[j++] = c; }
-    }
-  }
-  if (deliv[0]) rns_dest_store(npub, deliv, prop);
-  if (peer_known(from) || pk_get(from)) pk_store(from, npub);   /* interacting -> keep */
-  else pend_set(from, npub);                                    /* overheard -> park */
-  return 1;
 }
 
 /* ── follow list persistence + mutation ─────────────────────────────────── */
@@ -3130,7 +3077,7 @@ static void convo_send_core(const char *buf, const char *id_in,
     char bid[10]; bid[0] = '#'; s_cpy(bid + 1, gname, sizeof(bid) - 1);
     /* Primary: Reticulum broadcast — same compact frame as BLE, so the
      * receiver's ble_handle/deliver_bulletin path and content dedup treat it
-     * identically to an APRS/BLE copy (see pkbeacon_send). */
+     * identically to an APRS/BLE copy. */
     rns_tx_bulletin(bid, wire);
     if (g_ble_on) ble_tx_msg(bid, wire); /* compact BLE: to = "#group" (no scope) */
     /* Legacy APRS-IS (opt-in, licensed callsign only). */
@@ -3802,7 +3749,7 @@ static void ble_tx_pos(double lat, double lon, const char *comment) {
 }
 
 /* Is the local Reticulum node up? Probes hal_rns_delivery_dest (returns 0 while
- * the node is down — same check pkbeacon_send uses). Cached for one second so
+ * the node is down). Cached for one second so
  * the per-tick status indicator and the send gates don't hammer the HAL. */
 static int rns_up(void) {
   static uint64_t probed = 0;
@@ -5385,16 +5332,6 @@ static void groups_load(void) {
   render_rail();   /* the restored channels belong on the rail immediately */
 }
 
-/* The public-key beacon on/off state persists in KV "pkbeacon" ("1"/"0"), so
- * the user's choice survives a restart (unlike the per-session BLE toggle). */
-static void pkbeacon_save(void) {
-  hal_kv_set("pkbeacon", 8, g_pubkey_beacon ? "1" : "0", 1);
-}
-static void pkbeacon_load(void) {
-  char b[4];
-  uint32_t n = hal_kv_get("pkbeacon", 8, b, sizeof(b) - 1);
-  if (n >= 1) g_pubkey_beacon = (b[0] != '0');   /* absent -> keep default (on) */
-}
 /* iGate (BLE ↔ APRS-IS bridge) on/off persists in KV "igate" ("1"/"0"); absent
  * keeps the on-by-default state. */
 static void igate_save(void) {
@@ -5430,54 +5367,25 @@ static void aprsis_load(void) {
                  !is_autogen_call(g_aprsis_call) &&
                  g_aprsis_pass == aprs_passcode(g_aprsis_call));
 }
-/* Broadcast our npub once: APRS-IS bulletin to group "NOSTR" + same over BLE.
- * Receivers map the sender callsign (frame from-field) to the npub text. */
-static void pkbeacon_send(void) {
-  if (!g_pubkey_beacon || !g_pubkey[0]) return;
-  /* Advertise "<npub>|<rns-deliv-hex>" so peers can also reach us over Reticulum;
-   * each device adds its own dest under the shared npub. Falls back to npub-only
-   * when the RNS node is down (legacy parsers also read just the npub). */
-  char body[200]; s_cpy(body, g_pubkey, sizeof(body));
+/* Publish the queryable callsign->npub(+RNS dests) identity to the reachable
+ * NOSTR relays, hourly: the cold-start 1:1 path (do_convo_send/resolve_drain)
+ * resolves peers from exactly this record. This is a relay RECORD, not a chat
+ * message -- the old #NOSTR pubkey bulletin that also aired here is gone: the
+ * XPRS lane already carries the host's signed t:identity (XPRS.md 9.3), and a
+ * machine payload has no business in t:message. */
+static void identity_publish(void) {
   char deliv[80] = "", prop[80] = "";
   uint32_t dn = hal_rns_delivery_dest(deliv, sizeof(deliv) - 1);
-  if (dn > 0 && dn < sizeof(deliv)) {
-    deliv[dn] = 0;
-    s_cat(body, "|", sizeof(body)); s_cat(body, deliv, sizeof(body));
-    /* Also advertise our propagation mailbox so peers can pull store-and-forwarded
-     * 1:1 messages from us (the path that survives both ends being behind NAT). */
-    uint32_t pn = hal_rns_prop_dest(prop, sizeof(prop) - 1);
-    if (pn > 0 && pn < sizeof(prop)) {
-      prop[pn] = 0;
-      s_cat(body, "|", sizeof(body)); s_cat(body, prop, sizeof(body));
-    }
-  }
-  if (g_sock >= 0 && g_logged)
-    aprs_send_bulletin_multi(g_sock, g_call, PKBEACON_GROUP, body, APRS_MAX_MSG_LEN);
-  if (g_ble_on)
-    ble_tx_msg("#" PKBEACON_GROUP, body);
-  /* Also broadcast over Reticulum. APRS-IS only carries the beacon to stations
-   * whose area/budlist filter overlaps ours — two users on different networks
-   * with no shared filter would never learn each other's npub/deliv and could
-   * never start an encrypted/private chat. The RNS broadcast crosses NATs via
-   * the public hubs; the receiver's RNS drain feeds this exact frame back into
-   * ble_handle -> deliver_bulletin -> pk_intercept, same as the BLE path. */
-  {
-    char frame[220];
-    ble_pack(frame, sizeof(frame), g_call, "#" PKBEACON_GROUP, body);
-    hal_rns_broadcast(frame, s_len(frame));
-  }
-  /* Also publish a queryable callsign→npub(+RNS dests) identity to the reachable
-   * NOSTR relays, so a peer can resolve us by callsign even if it never heard this
-   * beacon — the basis for cold-start 1:1 (see do_convo_send / resolve_drain). */
-  if (deliv[0]) {
-    if (g_myrelay_n == 0) relay_pick();
-    if (g_myrelay_n > 0) {
-      char rj[RELAY_MAX * 80 + 16]; relays_json(g_myrelay, g_myrelay_n, rj, sizeof(rj));
-      hal_relay_identity_publish(g_call, s_len(g_call), deliv, s_len(deliv),
-                                 prop, s_len(prop), rj, s_len(rj));
-    }
-  }
-  g_last_pkbeacon = hal_time_epoch();
+  if (dn == 0 || dn >= sizeof(deliv)) return;
+  deliv[dn] = 0;
+  uint32_t pn = hal_rns_prop_dest(prop, sizeof(prop) - 1);
+  if (pn > 0 && pn < sizeof(prop)) prop[pn] = 0; else prop[0] = 0;
+  if (g_myrelay_n == 0) relay_pick();
+  if (g_myrelay_n == 0) return;
+  char rj[RELAY_MAX * 80 + 16]; relays_json(g_myrelay, g_myrelay_n, rj, sizeof(rj));
+  hal_relay_identity_publish(g_call, s_len(g_call), deliv, s_len(deliv),
+                             prop, s_len(prop), rj, s_len(rj));
+  g_last_identpub = hal_time_epoch();
 }
 
 /* ---- per-callsign mailbox (KV "m.<call>", lines "<from>|<text>") ---- */
@@ -5611,7 +5519,6 @@ static void deliver_bulletin(const char *gname, const char *from,
    * even if an upstream mine-check missed it (e.g. a stale g_call). */
   if (is_self_call(from)) return;
   /* NOSTR key beacon: record the sender's pubkey and stop (not a chat). */
-  if (pk_intercept(nm, from, text)) return;
   /* Strip any XPRS signature for the preview / like detection; convo_deliver
    * still gets the full text and re-verifies the signature. */
   char core[400]; char sg[80]; const char *cbody = text;
@@ -7343,7 +7250,6 @@ void module_init(void) {
   /* Cache our public key (base64url) and the persisted pubkey-beacon pref. */
   { uint32_t pn = hal_identity_pubkey(g_pubkey, sizeof(g_pubkey) - 1);
     if (pn < sizeof(g_pubkey)) g_pubkey[pn] = 0; else g_pubkey[0] = 0; }
-  pkbeacon_load();
   igate_load();    /* restore iGate (BLE ↔ APRS-IS bridge) on/off (default on) */
   blockhide_load(); /* restore local block list + hidden-message keys */
   emit_activity_filter(); /* re-apply Activity hide set (blocked + muted) */
@@ -7616,10 +7522,10 @@ void module_tick(void) {
    * below must run even with APRS-IS off (the default — no ham licence). */
   aprs_tick();
 
-  /* Public-key beacon: broadcast our pubkey on whatever transport is up. */
-  if (g_pubkey_beacon && g_pubkey[0] && (g_logged || g_ble_on || rns_up())) {
+  /* The queryable relay identity, hourly -- what cold-start 1:1 resolves. */
+  if (rns_up()) {
     uint64_t now = hal_time_epoch();
-    if (now - g_last_pkbeacon >= (uint64_t)PKBEACON_INTERVAL) pkbeacon_send();
+    if (now - g_last_identpub >= 3600) identity_publish();
   }
 
   /* Pull store-and-forwarded 1:1 messages from every contact's propagation
@@ -7861,21 +7767,6 @@ void module_handle_event(void) {
     render_rail();
     status("Channel switches applied");
     notify("info", "Channels updated");
-  }
-  else if (s_eq(cmd, "pubkey_apply")) {
-    /* Explicit apply (like ble_apply) so the on-by-default state isn't clobbered
-     * by an unset checkbox serialised as false on unrelated commands. */
-    g_pubkey_beacon = jbool_def(buf, "pubkey_beacon", 1);
-    pkbeacon_save();
-    if (g_pubkey_beacon) {
-      if (!g_pubkey[0]) { notify("warning", "No profile public key to broadcast"); }
-      else { g_last_pkbeacon = 0; pkbeacon_send();    /* send one now */
-             status("Public-key broadcast ON");
-             notify("success", "Broadcasting your public key"); }
-    } else {
-      status("Public-key broadcast OFF");
-      notify("info", "Public-key broadcast disabled");
-    }
   }
   else if (s_eq(cmd, "keys_refresh")) pk_render();
   else if (s_eq(cmd, "sign_apply")) {
