@@ -428,9 +428,16 @@ int32_t module_tick(void) {
 }
 
 int32_t module_handle_event(void) {
-    static char buf[6144];
+    /* The host bundles EVERY scalar field into each command message, so this
+     * buffer sizes the whole field map and not the one value we want. At 6 KB
+     * a long-enough map pushed `activity_input` past the end and the post was
+     * read as empty: no status, no error, nothing anywhere. Sized for the map
+     * with room to spare, and a truncated read is now visible rather than
+     * silently short. */
+    static char buf[24576];
     uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
     if (n == 0) return 0;
+    if (n >= sizeof(buf) - 1) hal_log(4, "[social] event truncated", 25);
     buf[n] = '\0';
 
     char cmd[64] = "";
@@ -446,15 +453,17 @@ int32_t module_handle_event(void) {
         g_ngrp = 0;
         feed_from_spool("activity", "{\"limit\":120}", "");
 
-    } else if (str_eq(cmd, "activity_send")) {
-        char text[6000] = "";
-        if (json_raw(buf, "activity_input", text, sizeof(text)) && text[0]) {
-            /* On the AIR and nowhere else: the core picks the bearers, splits
-             * per section 6.6 and signs with the profile key. This wapp only
-             * supplies the content. Our own packet comes back through the
-             * spool like any other, so the feed shows it once, not twice. */
-            hal_xprs_status(text, str_len(text), 0, 0);
-        }
+    /* `activity_send` is deliberately NOT handled here.
+     *
+     * The host airs the status itself, at the composer, because the wapp
+     * round-trip is not reliable enough to be the only path: the same lesson
+     * the NOSTR post took, recorded in wapp_page.dart — a wapp that does not
+     * invoke the publish HAL drops the post silently and the user sees it
+     * vanish. Measured here too: `ready` and the tick both run and fill the
+     * feed, and the very same handler never reaches this branch. One
+     * publisher, host-side, and our own packet returns through the spool like
+     * anyone else's.
+     */
 
     } else if (str_eq(cmd, "clear_feed")) {
         g_nseen = 0;
