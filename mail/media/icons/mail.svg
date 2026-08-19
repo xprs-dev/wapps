@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Envelope, drawn nearly edge-to-edge (1.2 margin instead of the usual 3):
+       the launcher renders this inside a rounded tile, so a glyph with the
+       stock padding reads noticeably smaller than the other icons. -->
+  <rect x="1.2" y="4" width="21.6" height="16" rx="2.4"/>
+  <path d="M1.9 6.2 L12 13.4 L22.1 6.2"/>
+</svg>

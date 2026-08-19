@@ -1,0 +1,57 @@
+[
+  {
+    "$": "screen",
+    "name": "Music",
+    "icon": "library_music",
+    "toolbar": true,
+    "search": true,
+    "tip": "Your music. Add base folders, then tap folders to browse and a track to play. Decoded in WebAssembly inside this wapp.",
+    "children": [
+      { "$": "group", "name": "player", "$type": "player" },
+      { "$": "action", "name": "add_folder", "label": "Add folder", "icon": "create_new_folder", "style": "primary", "tip": "Pick a base folder that holds your music." },
+      { "$": "action", "name": "music_home", "label": "Home", "icon": "home", "style": "secondary", "tip": "Back to your base music folders." },
+      { "$": "field", "name": "mtree", "$type": "people", "empty": "No music folders yet — tap Add folder.", "tip": "Tap a folder to open it, \"..\" to go up, or a track to play." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Films",
+    "icon": "movie",
+    "toolbar": true,
+    "search": true,
+    "tip": "Your films. Add base folders, then browse and tap a film to play it.",
+    "children": [
+      { "$": "action", "name": "add_film_folder", "label": "Add folder", "icon": "create_new_folder", "style": "primary", "tip": "Pick a base folder that holds your films." },
+      { "$": "action", "name": "film_home", "label": "Home", "icon": "home", "style": "secondary", "tip": "Back to your base film folders." },
+      { "$": "field", "name": "ftree", "$type": "people", "empty": "No film folders yet — tap Add folder.", "tip": "Tap a folder to open it, \"..\" to go up, or a film to play." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Radio",
+    "icon": "radio",
+    "toolbar": true,
+    "search": true,
+    "tip": "Online radio. Add stream URLs and tap to play.",
+    "children": [
+      { "$": "group", "name": "player", "$type": "player" },
+      { "$": "action", "name": "add_station", "label": "Add station", "icon": "add", "style": "primary", "tip": "Add an online radio stream (name + URL)." },
+      { "$": "field", "name": "stations", "$type": "people", "empty": "No stations yet — tap Add station.", "tip": "Tap a station to play it; use a row's menu to remove it." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Video",
+    "hidden": true,
+    "tip": "Video playback surface (opened automatically when a film plays).",
+    "children": [
+      {
+        "$": "group",
+        "name": "video-surface",
+        "$type": "video",
+        "controls": "embedded",
+        "fit": "contain"
+      }
+    ]
+  }
+]

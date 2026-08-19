@@ -1,0 +1,77 @@
+[
+  {
+    "$": "screen",
+    "name": "Coins",
+    "tip": "Coins this device operates an ATM for.",
+    "children": [
+      {
+        "$": "field",
+        "name": "atm_coins",
+        "$type": "people",
+        "empty": "No coins yet.\nOpen Create to mint a new coin."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Create",
+    "tip": "Create a new coin with its own ledger.",
+    "children": [
+      {
+        "$": "group",
+        "name": "create",
+        "children": [
+          { "$": "field", "name": "atm_picture", "$type": "icon", "label": "Picture" },
+          { "$": "field", "name": "atm_singular", "$type": "string", "label": "Denomination (singular)", "hint": "e.g. Euro", "default": "" },
+          { "$": "field", "name": "atm_plural", "$type": "string", "label": "Denomination (plural)", "hint": "e.g. Euros", "default": "" },
+          { "$": "field", "name": "atm_code", "$type": "string", "label": "Short name", "hint": "e.g. EUR", "default": "" },
+          { "$": "field", "name": "atm_symbol", "$type": "string", "label": "Symbol (optional)", "hint": "e.g. €", "default": "" },
+          { "$": "field", "name": "atm_desc", "$type": "string", "label": "Description", "multiline": true, "default": "" },
+          { "$": "field", "name": "atm_exp", "$type": "string", "label": "Max denomination exponent", "hint": "Powers of two up to 2^exp (default 10)", "default": "10" },
+          { "$": "action", "name": "create", "label": "Create coin", "icon": "add" },
+          { "$": "field", "name": "atm_descriptor", "$type": "string", "label": "Coin descriptor (share with wallets)", "multiline": true, "default": "" },
+          { "$": "field", "name": "atm_status", "$type": "string", "label": "Status", "default": "" }
+        ]
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Distribute",
+    "tip": "Distribute assigned coins to a participant.",
+    "children": [
+      {
+        "$": "group",
+        "name": "distribute",
+        "children": [
+          { "$": "field", "name": "atm_coin", "$type": "string", "label": "Coin ID", "hint": "Leave blank if you run only one coin", "default": "" },
+          { "$": "field", "name": "atm_to", "$type": "string", "label": "To (npub)", "default": "" },
+          { "$": "field", "name": "atm_amount", "$type": "string", "label": "Amount", "default": "" },
+          { "$": "action", "name": "faucet", "label": "Distribute", "icon": "send" },
+          { "$": "field", "name": "atm_status", "$type": "string", "label": "Status", "default": "" }
+        ]
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Trusted",
+    "menu": true,
+    "tip": "Designate trusted ATMs and share the coin.",
+    "children": [
+      {
+        "$": "group",
+        "name": "trust",
+        "children": [
+          { "$": "field", "name": "atm_npub", "$type": "string", "label": "Your ATM npub", "hint": "Share this so a coin admin can designate you trusted", "default": "" },
+          { "$": "field", "name": "atm_coin", "$type": "string", "label": "Coin ID", "hint": "Leave blank if you run only one coin", "default": "" },
+          { "$": "field", "name": "atm_trust", "$type": "string", "label": "Trust this npub", "default": "" },
+          { "$": "action", "name": "addatm", "label": "Designate trusted", "icon": "verified" },
+          { "$": "action", "name": "descriptor", "label": "Get coin descriptor", "icon": "share" },
+          { "$": "field", "name": "atm_descriptor", "$type": "string", "label": "Coin descriptor", "multiline": true, "default": "" },
+          { "$": "field", "name": "atm_status", "$type": "string", "label": "Status", "default": "" }
+        ]
+      }
+    ]
+  }
+]

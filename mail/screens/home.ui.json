@@ -1,0 +1,56 @@
+[
+  {
+    "$": "screen",
+    "name": "Mail",
+    "icon": "mail",
+    "tip": "Encrypted direct messages. Every message is a NOSTR note addressed to a person's key, carried over both the internet and the Reticulum mesh.",
+    "children": [
+      {
+        "$": "group",
+        "name": "conversations",
+        "$type": "conversations",
+        "label": "Messages",
+        "children": [
+          { "$": "action", "name": "new_message", "icon": "edit", "slot": "list",
+            "tip": "Start a conversation — npub, hex key, a callsign, or an email address to look up" }
+        ]
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Email",
+    "icon": "alternate_email",
+    "menu": true,
+    "tip": "Your email identity. People who only have your email address reach this device when the address's domain lists your key (NIP-05: /.well-known/nostr.json).",
+    "children": [
+      { "$": "field", "name": "email_status", "$type": "log", "label": "Email identity" },
+      { "$": "action", "name": "set_email", "label": "Set my email address", "icon": "edit" },
+      { "$": "action", "name": "verify_email", "label": "Verify", "icon": "verified" }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Blocked",
+    "icon": "block",
+    "menu": true,
+    "tip": "People whose messages are dropped on arrival. Local only — nothing is sent, and they are not told.",
+    "children": [
+      { "$": "field", "name": "blocked", "$type": "log", "label": "Blocked" },
+      { "$": "action", "name": "block_key", "label": "Block a key", "icon": "block" },
+      { "$": "action", "name": "unblock", "label": "Unblock", "icon": "person_add" },
+      { "$": "action", "name": "refresh_blocked", "label": "Refresh", "icon": "refresh" }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Status",
+    "icon": "info",
+    "menu": true,
+    "tip": "Where your messages are going, and what came back.",
+    "children": [
+      { "$": "field", "name": "status", "$type": "log", "label": "Delivery" },
+      { "$": "action", "name": "refresh_status", "label": "Refresh", "icon": "refresh" }
+    ]
+  }
+]

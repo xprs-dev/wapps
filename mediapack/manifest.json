@@ -1,0 +1,25 @@
+{
+  "id":              "radio.xprs.mediapack",
+  "version":         "1.0.1",
+  "kind":            "library",
+  "title":           "Mediapack",
+  "description":     "Media playback capability for other wapps.",
+  "summary":         "Provides the media.video capability — embedded video/audio playback — to any wapp that requires it (e.g. Movies). Backed by the host's native media engine on supported desktop and mobile platforms. Has no UI of its own; installing it simply makes video playback available.",
+  "icon":            "media/icons/mediapack.svg",
+  "tags":            ["media", "video", "library", "capability"],
+  "tick_interval_ms": null,
+  "permissions":     [],
+  "platforms":       ["linux", "windows", "macos", "android", "ios"],
+  "hardware":        ["intel", "arm"],
+  "provides": {
+    "functionalities": ["media.video"],
+    "events":         [],
+    "variables":      []
+  },
+  "requires": {
+    "hal":       ["log"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

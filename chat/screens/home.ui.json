@@ -1,0 +1,235 @@
+[
+  {
+    "$": "screen",
+    "name": "Chat",
+    "icon": "campaign",
+    "children": [
+      {
+        "$": "group",
+        "name": "rooms",
+        "$type": "rooms"
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Start a chat",
+    "menu": true,
+    "appbar": true,
+    "popup": true,
+    "icon": "person_add",
+    "tip": "Message a person: a NomadNet peer, a callsign or an npub.",
+    "children": [
+      {
+        "$": "action",
+        "name": "rooms_newchat",
+        "label": "New chat",
+        "icon": "person_add",
+        "tip": "Find someone and start a direct conversation."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Create a room",
+    "menu": true,
+    "appbar": true,
+    "popup": true,
+    "icon": "add",
+    "tip": "Create a room under the one you have open.",
+    "children": [
+      {
+        "$": "action",
+        "name": "rooms_new",
+        "label": "New room",
+        "icon": "add",
+        "tip": "Create a sub-room. A moderator approves it when you are not one."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Find",
+    "menu": true,
+    "appbar": true,
+    "popup": true,
+    "icon": "search",
+    "tip": "Search rooms, channels, conversations and people.",
+    "children": [
+      {
+        "$": "action",
+        "name": "rooms_search",
+        "label": "Search",
+        "icon": "search",
+        "tip": "Find a room, a channel, a conversation or a person."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Search",
+    "hidden": true,
+    "toolbar": true,
+    "search": true,
+    "tip": "Find a room, a channel, a conversation or a person.",
+    "children": [
+      {
+        "$": "field",
+        "name": "searchall",
+        "$type": "people",
+        "empty": "Search rooms, channels, your conversations and people on the mesh.\nType a name, callsign, npub or LXMF address.",
+        "tip": "Tap a result to open it. A room or channel you have not joined is joined on the way in; a person starts a conversation."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "New chat",
+    "hidden": true,
+    "toolbar": true,
+    "search": true,
+    "tip": "Find a person and start a direct conversation.",
+    "children": [
+      {
+        "$": "field",
+        "name": "finduser",
+        "$type": "people",
+        "empty": "Nobody heard yet.\nNomadNet and XPRS people appear here as their announces arrive — or paste an LXMF address to message someone straight away.",
+        "tip": "Everyone you can message, in one list. Each row says where they are from. NomadNet peers chat here over LXMF; XPRS people open in Messages."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Nearby devices",
+    "icon": "radar",
+    "tip": "Open the Mesh wapp — the live map of every node and station within reach.",
+    "open_wapp": "mesh",
+    "children": [],
+    "menu": true,
+    "appbar": true
+  },
+  {
+    "$": "screen",
+    "name": "Settings",
+    "hidden": true,
+    "tip": "Station identity, position, Bluetooth and media.",
+    "children": [
+      {
+        "$": "group",
+        "name": "position",
+        "tip": "Your position and how far around it to listen.",
+        "children": [
+          {
+            "$": "field",
+            "name": "my_lat",
+            "$type": "string",
+            "label": "Latitude",
+            "default": "40.2056"
+          },
+          {
+            "$": "field",
+            "name": "my_lon",
+            "$type": "string",
+            "label": "Longitude",
+            "default": "-8.4196"
+          },
+          {
+            "$": "field",
+            "name": "radius_km",
+            "$type": "string",
+            "label": "Filter radius (km)",
+            "default": "100"
+          }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "bluetooth",
+        "tip": "Exchange short messages directly over Bluetooth, off-grid.",
+        "children": [
+          {
+            "$": "field",
+            "name": "ble_enabled",
+            "$type": "bool",
+            "label": "Exchange over Bluetooth",
+            "default": true,
+            "apply": "ble_apply",
+            "tip": "Scan for and broadcast chat frames over BLE."
+          }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "channels",
+        "tip": "Which broadcast channels this device listens to. Rooms are always on; these are the open firehoses.",
+        "children": [
+          {
+            "$": "field",
+            "name": "chan_local",
+            "$type": "bool",
+            "label": "Local chat (nearby devices)",
+            "default": true,
+            "apply": "chan_apply",
+            "tip": "Group chatter from devices around you, over Bluetooth and local Reticulum. Off = those channels leave the rail and stop counting as unread."
+          },
+          {
+            "$": "field",
+            "name": "chan_global",
+            "$type": "bool",
+            "label": "Global chat (internet Reticulum)",
+            "default": true,
+            "apply": "chan_apply",
+            "tip": "Worldwide group channels relayed by internet Reticulum nodes. Off = the worldwide firehose disappears from the rail."
+          },
+          {
+            "$": "field",
+            "name": "chan_nomad",
+            "$type": "bool",
+            "label": "NomadNet bridge (#NOMADNET)",
+            "default": true,
+            "apply": "chan_apply",
+            "tip": "Messages from non-XPRS NomadNet/LXMF nodes. Off = they are dropped on arrival."
+          }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "media",
+        "tip": "Images shared in messages are fetched over the network.",
+        "children": [
+          {
+            "$": "field",
+            "name": "media_auto_mb",
+            "$type": "string",
+            "label": "Auto-download images up to (MB)",
+            "default": "10",
+            "tip": "Images at or below this size download automatically."
+          }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "identity_broadcast",
+        "tip": "Periodically broadcast your public key so others can message you encrypted.",
+        "children": [
+          {
+            "$": "field",
+            "name": "pubkey_beacon",
+            "$type": "bool",
+            "label": "Broadcast my public key",
+            "default": true,
+            "tip": "Every 30 min, send your profile's public key as a bulletin so peers can message you encrypted."
+          },
+          {
+            "$": "action",
+            "name": "pubkey_apply",
+            "label": "Apply key broadcast",
+            "style": "primary",
+            "tip": "Save the setting above and send one broadcast now."
+          }
+        ]
+      }
+    ]
+  }
+]

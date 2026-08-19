@@ -1,0 +1,57 @@
+{
+  "id": "tools.xprs.social",
+  "version": "0.2.42",
+  "kind": "app",
+  "title": "Social",
+  "description": "Social \u2014 follow people, read their notes and post your own, over internet and Reticulum relays (NOSTR protocol).",
+  "summary": "A social feed on the NOSTR protocol: read and post notes over internet and Reticulum relays, search posts and people with filters, manage follows and relays from the top-right menu.",
+  "icon": "media/icons/social.svg",
+  "color": "#7B2FF7",
+  "tags": [
+    "social",
+    "nostr",
+    "relay",
+    "reticulum",
+    "feed"
+  ],
+  "entry_ui": "screens/home.ui.json",
+  "tick_interval_ms": 1500,
+  "permissions": [
+    "network"
+  ],
+  "platforms": [
+    "linux",
+    "windows",
+    "macos",
+    "android"
+  ],
+  "hardware": [
+    "N/A",
+    "intel",
+    "arm"
+  ],
+  "provides": {
+    "functions": [],
+    "events": [],
+    "variables": [],
+    "functionalities": [],
+    "intents": [
+      "social"
+    ]
+  },
+  "requires": {
+    "hal": [
+      "log",
+      "msg",
+      "kv",
+      "time",
+      "crypto",
+      "nostr",
+      "contacts",
+      "xprs"
+    ],
+    "events": [],
+    "libraries": [],
+    "variables": []
+  }
+}

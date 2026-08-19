@@ -1,0 +1,96 @@
+[
+  {
+    "$": "screen",
+    "name": "Wallet",
+    "tip": "Coins you hold, from different providers.",
+    "children": [
+      {
+        "$": "field",
+        "name": "coins",
+        "$type": "people",
+        "empty": "No coins yet.\nOpen the ⋮ menu → Add coin to add one."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Receive",
+    "tip": "Accept a coin token someone gave you.",
+    "children": [
+      {
+        "$": "group",
+        "name": "receive",
+        "children": [
+          {
+            "$": "field",
+            "name": "recv_token",
+            "$type": "string",
+            "label": "Token",
+            "hint": "Paste a coin token (coin1…)",
+            "multiline": true,
+            "default": ""
+          },
+          { "$": "action", "name": "receive", "label": "Receive", "icon": "download" },
+          { "$": "field", "name": "coin_status", "$type": "string", "label": "Status", "default": "" }
+        ]
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Send",
+    "tip": "Send value as a shareable token.",
+    "children": [
+      {
+        "$": "group",
+        "name": "send",
+        "children": [
+          { "$": "field", "name": "send_coin", "$type": "string", "label": "Coin ID", "hint": "Leave blank if you hold only one coin", "default": "" },
+          { "$": "field", "name": "send_to", "$type": "string", "label": "To (npub)", "hint": "Recipient npub1…", "default": "" },
+          { "$": "field", "name": "send_amount", "$type": "string", "label": "Amount", "default": "" },
+          { "$": "action", "name": "send", "label": "Send", "icon": "send" },
+          { "$": "field", "name": "send_result", "$type": "string", "label": "Token to share", "multiline": true, "default": "" },
+          { "$": "field", "name": "coin_status", "$type": "string", "label": "Status", "default": "" }
+        ]
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Coin",
+    "menu": true,
+    "tip": "Coin details.",
+    "children": [
+      {
+        "$": "group",
+        "name": "detail",
+        "children": [
+          { "$": "field", "name": "detail_picture", "$type": "icon", "label": "Picture" },
+          { "$": "field", "name": "detail_name", "$type": "string", "label": "Coin", "default": "" },
+          { "$": "field", "name": "detail_balance", "$type": "string", "label": "Balance", "default": "" },
+          { "$": "field", "name": "detail_code", "$type": "string", "label": "Short code", "default": "" },
+          { "$": "field", "name": "detail_symbol", "$type": "string", "label": "Symbol", "default": "" },
+          { "$": "field", "name": "detail_desc", "$type": "string", "label": "Description", "multiline": true, "default": "" },
+          { "$": "field", "name": "detail_id", "$type": "string", "label": "Coin ID", "default": "" }
+        ]
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Add coin",
+    "menu": true,
+    "tip": "Add a coin from a provider.",
+    "children": [
+      {
+        "$": "group",
+        "name": "add",
+        "children": [
+          { "$": "field", "name": "add_descriptor", "$type": "string", "label": "Coin descriptor", "hint": "Paste a provider's coin (coindesc1…)", "multiline": true, "default": "" },
+          { "$": "action", "name": "add", "label": "Add coin", "icon": "add" },
+          { "$": "field", "name": "coin_status", "$type": "string", "label": "Status", "default": "" }
+        ]
+      }
+    ]
+  }
+]

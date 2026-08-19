@@ -1,0 +1,53 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.install",
+  "wapp_version": "1.3.8",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "b58c306c714cb848e0c9a50c4af849698678f6fd5accf6f494899e07dfc13df7",
+  "hashes": {
+    "Makefile": "6d5be150f80084e3b215bd6287ae05aec153f6788e10eb0e88fa9aa3af14ada4",
+    "app.wasm": "1965ef9380a6abc1954a9d3fd7a4db9bd5bdef1fa74fa2a238fc89f1b76fc4f8",
+    "lang/de.json": "01b23057289cc1d949a9dbb0e0280d7421e98ad1c00e00ca6e39abb047feb716",
+    "lang/en.json": "16ac39f8129373e7da3e64f4b9a046cc9d397d1de39d2b27095440f869030630",
+    "lang/pt.json": "8dbdcf928dc43b823685453203916983d2c729c0dced1a67ef1f9f238184177b",
+    "main.c": "9a6c9adfec17a257817ca7aff657186e544aba5204f0a8c1c0375b00e85422f5",
+    "manifest.json": "0fb859cb6d1f1ba43ff2da4800745a47cdebc06c5e4863c6521fc187c8c0d082",
+    "media/icons/install.svg": "3e2e9588fd2666a06e5c745b82f04c4046cabe8366fea031998279da16048490",
+    "permissions.json": "1f27adbf8fee33c051256b277fbed8abbc9803988c6b8b0b1e788dea2803a7cd",
+    "screens/home.ui.json": "523aaa9b4d0a5026e167bb8b64c6e5990d9702a6926c4174dcb06ededc66adc5",
+    "store/description.json": "edf1ce541fd18d7b32ba54f5d9296a6e00d2e2e9ac611e6eab525ff73330d7b0"
+  },
+  "event": {
+    "id": "da2f4a266db15d6c23fe24b69a3d145d974189a93107e8ccb4d9e7875f514a88",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.install"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.install"
+      ],
+      [
+        "wapp_version",
+        "1.3.8"
+      ],
+      [
+        "manifest_digest",
+        "b58c306c714cb848e0c9a50c4af849698678f6fd5accf6f494899e07dfc13df7"
+      ]
+    ],
+    "content": "b58c306c714cb848e0c9a50c4af849698678f6fd5accf6f494899e07dfc13df7",
+    "sig": "41648a6622078aac7bea549c329b7aa7bf212a8b22ef78fdabad4952500cee9c6230508127345d72a8f8e74560bda66fbac8b27c2aab51aeefa408835e0370b1"
+  }
+}

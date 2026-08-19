@@ -1,0 +1,45 @@
+{
+  "id":              "tools.xprs.mp4player",
+  "version":         "2.0.1",
+  "kind":            "app",
+  "title":           "Player",
+  "description":     "Music & media player. Add your music folders in Settings and play them; also plays MP4/H.264, HEVC/H.265 (incl. 10-bit phone videos), AV1 and WebM (VP8/VP9) video, and MP3, OGG, FLAC, WAV, AAC/M4A and Opus audio. Every codec is decoded in WebAssembly inside the wapp - none ships in the host.",
+  "summary":         "A platform-agnostic media player. Ships NATIVE static ffmpeg decoders for desktop (bin/, used automatically) and bundles wasm decoders (openh264 for H.264, libde265 for HEVC/H.265, dav1d for AV1, libvpx for VP8/VP9, dr_libs + stb_vorbis for mp3/wav/flac/ogg, fdk-aac for AAC, libopus for Opus, and libnestegg to demux WebM) compiled to WebAssembly, so it plays the same on every platform and keeps the codecs out of the host binary. Provides the media.video and media.audio capabilities and handles video and audio files opened from chats or the file browser.",
+  "icon":            "media/icons/mp4player.svg",
+  "entry_ui":        "screens/home.ui.json",
+  "tags":            ["video", "audio", "mp4", "h264", "hevc", "h265", "av1", "webm", "vp9", "opus", "aac", "mp3", "ogg", "flac", "media", "player"],
+  "tick_interval_ms": 16,
+  "permissions":     ["storage", "network"],
+  "platforms":       ["linux", "windows", "macos", "android", "ios"],
+  "hardware":        ["intel", "arm"],
+  "provides": {
+    "functionalities": ["media.video", "media.audio"],
+    "native_binaries": {
+      "linux-x86_64":   "bin/ffmpeg-linux-x86_64",
+      "windows-x86_64": "bin/ffmpeg-win-x86_64.exe"
+    },
+    "file_handlers": [
+      {
+        "extensions": ["mp4", "m4v", "mov", "webm", "mkv"],
+        "mime":       ["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"],
+        "title":      "Play",
+        "modes":      ["view"]
+      },
+      {
+        "extensions": ["mp3", "ogg", "oga", "flac", "wav", "m4a", "opus"],
+        "mime":       ["audio/mpeg", "audio/ogg", "audio/flac", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac", "audio/opus"],
+        "title":      "Play",
+        "modes":      ["view"]
+      }
+    ],
+    "events":         [],
+    "variables":      []
+  },
+  "requires": {
+    "hal":            ["log", "kv", "msg", "file", "video"],
+    "functionalities": [],
+    "events":         [],
+    "libraries":      [],
+    "variables":      []
+  }
+}

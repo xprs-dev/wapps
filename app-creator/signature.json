@@ -1,0 +1,53 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.app-creator",
+  "wapp_version": "0.3.5",
+  "signed_at": 1787085165,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "c739c46bd60e447b79bae9ce3ad689140ca8b85641712998e1c490da8249ced1",
+  "hashes": {
+    "Makefile": "63abcdf4213733805946033fa86fd7ea248a03d8055cfc7cc4a31e88e2d09928",
+    "app.wasm": "c7b0e0817f81b31547fda783355d918b7e8bd9c2ebeff792d173ac5aea8a536b",
+    "lang/de.json": "9211b1a1cb35ad4ea4167dc60f05f1a74c2ea68e997663daf0d9c54f6995c48e",
+    "lang/en.json": "2c059e79b09b63433f28bc89dc29823aab834c6e6d898ca8444ed4ae53f0cde7",
+    "lang/pt.json": "b71a1716fc107f3c6a43ab03b74db39d4267d590aecd9ae648555822ea1f7b7a",
+    "main.c": "50128d96f602aef4a48ba3e40f883269529aeb3c4e728bfb2bb78015e63a24f9",
+    "manifest.json": "061ffe913e350db5be9bf3d964413983f8f4d1cb8f013a9d32a49defa0178cc5",
+    "media/icons/app-creator.svg": "d0693e7f370791526901a7330fa84ccd3f4c4326691b3e086793765cd1d2d3c6",
+    "permissions.json": "6cfd2d789b85ac33ef968e7b6fa67bcfda0d7371e13a4edbed103430c0c71cae",
+    "screens/home.ui.json": "ca9238d35f2fb872aed9d9c2cf67451488106bad7beec47d2949ac9392b2f064",
+    "store/description.json": "5084976efe15de0d8b3295ab3b619e1a1e670675a096e1dcbe6259309bef33fa"
+  },
+  "event": {
+    "id": "e3bfe98fe16c0b18d79746fae7a0cf2c3c873499aefab2d9ba5f6aee074885b9",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085165,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.app-creator"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.app-creator"
+      ],
+      [
+        "wapp_version",
+        "0.3.5"
+      ],
+      [
+        "manifest_digest",
+        "c739c46bd60e447b79bae9ce3ad689140ca8b85641712998e1c490da8249ced1"
+      ]
+    ],
+    "content": "c739c46bd60e447b79bae9ce3ad689140ca8b85641712998e1c490da8249ced1",
+    "sig": "9a25b18d4c1e9e96917aff8f9a9d8619da799bfd48b270599467019afb3d7c44b24530c879b58557d3347441a5813b5eab2b6fd37113d59e7a076fc3046d6c6e"
+  }
+}

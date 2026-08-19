@@ -1,0 +1,43 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "radio.xprs.mediapack",
+  "wapp_version": "1.0.1",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "3108367dd7de3f83888f2b3303076cf87513243b08b355370b92b2445427a405",
+  "hashes": {
+    "manifest.json": "de1df735f949ccf47c0f7551fa70305d2f45065ea3f48862e88b0460f0350d13"
+  },
+  "event": {
+    "id": "3a447b1688c4afa389ee9e573c93838db7e6d95ef6f1924db07934ff37b3b697",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:radio.xprs.mediapack"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "radio.xprs.mediapack"
+      ],
+      [
+        "wapp_version",
+        "1.0.1"
+      ],
+      [
+        "manifest_digest",
+        "3108367dd7de3f83888f2b3303076cf87513243b08b355370b92b2445427a405"
+      ]
+    ],
+    "content": "3108367dd7de3f83888f2b3303076cf87513243b08b355370b92b2445427a405",
+    "sig": "03d5b5a7cd226d8ac00cc4f63bb9cd8c731ce0896226eed4b3fe6aa3ce8a37a43a8b482598ceb342468f2b76bef27ba5387d4b8c63cc3160a8387b751b22dad1"
+  }
+}

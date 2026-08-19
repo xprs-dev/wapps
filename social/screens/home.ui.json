@@ -1,0 +1,173 @@
+[
+  {
+    "$": "screen",
+    "name": "Activity",
+    "icon": "home",
+    "tip": "Notes from the accounts you follow. Share an update below.",
+    "children": [
+      {
+        "$": "field",
+        "name": "activity",
+        "$type": "chat",
+        "hint": "What's happening?"
+      },
+      {
+        "$": "action",
+        "name": "clear_feed",
+        "label": "Clear feed",
+        "icon": "delete",
+        "slot": "menu",
+        "tip": "Remove all posts currently in the feed"
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Notifications",
+    "icon": "bell",
+    "menu": true,
+    "appbar": true,
+    "tip": "Likes, upvotes, replies and reposts of your posts.",
+    "children": [
+      {
+        "$": "field",
+        "name": "notifications",
+        "$type": "chat"
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Search",
+    "icon": "search",
+    "menu": true,
+    "appbar": true,
+    "tip": "Find posts and people across your feed and the connected relays.",
+    "children": [
+      {
+        "$": "field",
+        "name": "search_input",
+        "$type": "string",
+        "label": "Search",
+        "hint": "Words, a name, or #topic",
+        "live": true
+      },
+      {
+        "$": "field",
+        "name": "search_kind",
+        "$type": "enum",
+        "label": "Find",
+        "default": "all",
+        "apply": "search_kind_changed",
+        "children": [
+          {
+            "$": "option",
+            "name": "all",
+            "label": "Everything"
+          },
+          {
+            "$": "option",
+            "name": "posts",
+            "label": "Posts"
+          },
+          {
+            "$": "option",
+            "name": "people",
+            "label": "People"
+          }
+        ]
+      },
+      {
+        "$": "field",
+        "name": "search_when",
+        "$type": "enum",
+        "label": "When",
+        "default": "any",
+        "apply": "search_when_changed",
+        "children": [
+          {
+            "$": "option",
+            "name": "any",
+            "label": "Any time"
+          },
+          {
+            "$": "option",
+            "name": "day",
+            "label": "24 hours"
+          },
+          {
+            "$": "option",
+            "name": "week",
+            "label": "Week"
+          },
+          {
+            "$": "option",
+            "name": "month",
+            "label": "Month"
+          }
+        ]
+      },
+      {
+        "$": "field",
+        "name": "search_media",
+        "$type": "bool",
+        "label": "Only posts with media",
+        "default": false,
+        "apply": "search_media_changed"
+      },
+      {
+        "$": "field",
+        "name": "search_results",
+        "$type": "chat"
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Following",
+    "icon": "people",
+    "menu": true,
+    "tip": "Accounts you follow appear in your Activity feed.",
+    "children": [
+      {
+        "$": "action",
+        "name": "follow_add",
+        "label": "Follow an npub",
+        "icon": "person_add",
+        "style": "primary",
+        "tip": "Paste an npub or hex pubkey to follow — their notes appear in Activity."
+      },
+      {
+        "$": "field",
+        "name": "follow_input",
+        "$type": "string",
+        "label": "npub / hex pubkey",
+        "hint": "npub1…"
+      },
+      {
+        "$": "field",
+        "name": "follows_list",
+        "$type": "people",
+        "tip": "Accounts you follow. Tap a row to open its profile."
+      }
+    ],
+    "toolbar": true
+  },
+  {
+    "$": "screen",
+    "name": "NOSTR on Internet",
+    "icon": "cloud",
+    "menu": true,
+    "tip": "Relays this device talks to, and the Blossom servers its media comes from.",
+    "children": [
+      {
+        "$": "field",
+        "name": "nostr_internet",
+        "$type": "string",
+        "label": "Internet",
+        "readonly": true,
+        "tip": "Managed by the host: relays + Blossom media servers."
+      }
+    ]
+  }
+]

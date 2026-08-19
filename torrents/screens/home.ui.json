@@ -1,0 +1,169 @@
+[
+  {
+    "$": "screen",
+    "name": "Torrents",
+    "icon": "download_for_offline",
+    "toolbar": true,
+    "tip": "Tap a torrent to open it, or a folder to go in. Organize with folders.",
+    "children": [
+      { "$": "field", "name": "dash", "$type": "stats", "tip": "What this device holds and gives: folders you publish, pinned copies you seed, the library on disk, and how often others have downloaded from you." },
+      { "$": "action", "name": "flt_all", "label": "All", "icon": "list", "style": "secondary", "tip": "Show every torrent." },
+      { "$": "action", "name": "flt_mine", "label": "Mine", "icon": "person", "style": "secondary", "tip": "Show only the torrents you created." },
+      { "$": "action", "name": "lib_newfolder", "label": "New folder", "icon": "create_new_folder", "style": "secondary", "tip": "Create a subfolder here to organize torrents." },
+      { "$": "field", "name": "torrents", "$type": "people", "empty": "Nothing here yet.\nTap + to share a folder, or search the network for something to download.", "tip": "Tap a torrent to open it, or a folder to go in." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Add",
+    "menu": true,
+    "appbar": true,
+    "popup": true,
+    "icon": "add",
+    "tip": "Open a link, or share a folder.",
+    "children": [
+      { "$": "action", "name": "t_open_link", "label": "Open a link", "icon": "link", "tip": "Paste an ntorrent1... link to download it." },
+      { "$": "action", "name": "t_scan_qr", "label": "Scan a QR code", "icon": "qr_code_scanner", "tip": "Point the camera at a torrent's QR code to open it (Android)." },
+      { "$": "action", "name": "t_add_disk", "label": "Share a folder", "icon": "create_new_folder", "tip": "Turn a folder on this device into a torrent." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Search",
+    "menu": true,
+    "appbar": true,
+    "toolbar": true,
+    "search": true,
+    "icon": "search",
+    "tip": "Search the whole network - every listing published to the mesh - by title, description or tags, or browse by category.",
+    "children": [
+      { "$": "action", "name": "srch_sort", "label": "Sort", "icon": "sort", "style": "secondary", "tip": "Cycle sort: seeders, recently updated, size (shown in the results header)." },
+      { "$": "action", "name": "srch_cats", "label": "Categories", "icon": "category", "style": "secondary", "tip": "Browse torrents by category (only categories that have torrents are shown)." },
+      { "$": "field", "name": "results", "$type": "people", "empty": "Type above to search the network, or tap Categories to browse.\nResults marked 'on the network' come from other devices - open one to fetch its listing.", "tip": "Tap a category to browse it, or a torrent to open its listing." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Listing",
+    "menu": true,
+    "icon": "info",
+    "children": [
+      { "$": "group", "$type": "header-actions", "children": [
+        { "$": "group", "$type": "menu", "icon": "menu", "tip": "More", "children": [
+          { "$": "action", "name": "listing_browse", "label": "Browse files", "icon": "folder_open", "tip": "Open the full-screen file browser." },
+          { "$": "action", "name": "listing_opendir", "label": "Open folder on disk", "icon": "folder_shared", "tip": "Show this torrent's real files in the system file manager (yours, or a pinned copy)." },
+          { "$": "action", "name": "listing_move", "label": "Move to folder", "icon": "drive_file_move", "tip": "File this torrent under one of your organizing folders." },
+          { "$": "action", "name": "listing_edit", "label": "Edit listing", "icon": "edit", "tip": "Describe what you share (publisher only)." },
+          { "$": "action", "name": "listing_popularity", "label": "Popularity", "icon": "insights", "tip": "See how many peers seed and download this over the months (kept on your device)." },
+          { "$": "action", "name": "listing_updates", "label": "Get updates", "icon": "sync", "tip": "Follow the publisher's changes, or freeze a static copy to save bandwidth." },
+          { "$": "action", "name": "t_manage", "label": "Manage", "icon": "settings", "tip": "Pin, rescan, copy link or remove this torrent." }
+        ] }
+      ] },
+      { "$": "field", "name": "listing_media", "$type": "gallery", "tip": "The listing, then a simple file browser. Tap a screenshot to open it full-screen; tap a file to open it, or use the ☰ menu to browse full-screen." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Popularity",
+    "menu": true,
+    "icon": "insights",
+    "children": [
+      { "$": "field", "name": "pop_chart", "$type": "popularity", "tip": "How many peers hold (seeders) and download (leechers) this torrent each month. Counted on your device only, never stored in the folder." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Edit listing",
+    "menu": true,
+    "icon": "edit",
+    "tip": "Describe what you share.",
+    "children": [
+      { "$": "field", "name": "m_title", "$type": "string", "label": "Title", "max": 50, "hint": "what the content is called", "tip": "Up to 50 characters." },
+      { "$": "field", "name": "m_desc", "$type": "string", "label": "Description", "max": 200, "multiline": true, "lines": 4, "hint": "what is in here", "tip": "Up to 200 characters." },
+      {
+        "$": "field", "name": "m_cat", "$type": "enum", "label": "Category", "default": "other",
+        "tip": "Pick one. Use the +18 switch for adult, not a category.",
+        "children": [
+          { "$": "option", "name": "film", "label": "Film" },
+          { "$": "option", "name": "series", "label": "Series / TV" },
+          { "$": "option", "name": "anime", "label": "Anime" },
+          { "$": "option", "name": "documentary", "label": "Documentary" },
+          { "$": "option", "name": "music", "label": "Music" },
+          { "$": "option", "name": "audiobook", "label": "Audiobook" },
+          { "$": "option", "name": "book", "label": "Book" },
+          { "$": "option", "name": "comic", "label": "Comic" },
+          { "$": "option", "name": "manga", "label": "Manga" },
+          { "$": "option", "name": "magazine", "label": "Magazine" },
+          { "$": "option", "name": "game", "label": "Game" },
+          { "$": "option", "name": "software", "label": "Software" },
+          { "$": "option", "name": "course", "label": "Course" },
+          { "$": "option", "name": "podcast", "label": "Podcast" },
+          { "$": "option", "name": "photo", "label": "Photos" },
+          { "$": "option", "name": "dataset", "label": "Dataset" },
+          { "$": "option", "name": "other", "label": "Other" }
+        ]
+      },
+      { "$": "field", "name": "m_tags", "$type": "string", "label": "Tags", "max": 120, "hint": "e.g. 1080p, scifi, open", "tip": "Up to 10, comma separated." },
+      { "$": "field", "name": "m_adult", "$type": "bool", "label": "+18 (adult)", "default": false, "tip": "Adult content flag." },
+      { "$": "action", "name": "m_save", "label": "Save the listing", "icon": "save", "style": "primary", "tip": "Publish the listing." },
+      { "$": "action", "name": "m_icon", "label": "Icon", "icon": "image", "style": "secondary", "tip": "A small square icon for this torrent — like a website's tab icon. Shown next to it in the list. Saved as data/favicon.*" },
+      { "$": "action", "name": "m_cover", "label": "Cover image", "icon": "image", "style": "secondary", "tip": "Poster / box art. Up to 30MB." },
+      { "$": "action", "name": "m_banner", "label": "Banner image", "icon": "image", "style": "secondary", "tip": "A wide header image. Up to 30MB." },
+      { "$": "action", "name": "m_trailer", "label": "Trailer (webm)", "icon": "movie", "style": "secondary", "tip": "A short clip. Up to 30MB." },
+      { "$": "action", "name": "m_gallery", "label": "Add a screenshot / clip", "icon": "add", "style": "secondary", "tip": "Images or short clips, up to 10, each 30MB max." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Swarm",
+    "menu": true,
+    "icon": "hub",
+    "tip": "Who else has this torrent.",
+    "children": [
+      { "$": "action", "name": "swarm_refresh", "label": "Refresh", "icon": "refresh", "style": "secondary", "tip": "Ask the Indexers again who is holding this folder." },
+      { "$": "field", "name": "swarm_log", "$type": "log", "label": "Holders", "tip": "Best holder first: an awake machine on mains and a real uplink beats a phone on battery and a metered data plan. \"direct\" = we heard this device ourselves; \"dht\" = an Indexer told us." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Info",
+    "menu": true,
+    "icon": "info",
+    "tip": "Share link and stats.",
+    "children": [
+      { "$": "action", "name": "copy_link", "label": "Copy link", "icon": "link", "style": "primary", "tip": "Show and copy the ntorrent1... link. It carries the folder key, a few provider hints and the publisher - the name is deliberately NOT in it, because an unsigned name in a link is a phishing surface." },
+      { "$": "action", "name": "copy_id", "label": "Copy id (hex)", "icon": "content_copy", "style": "secondary", "tip": "Copy the raw hex folder id." },
+      { "$": "field", "name": "info_log", "$type": "log", "label": "Torrent info", "tip": "Link, file count, size, and how often this device has served its files." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Settings",
+    "menu": true,
+    "icon": "settings",
+    "tip": "Seeding and rescans.",
+    "children": [
+      {
+        "$": "group",
+        "name": "downloads",
+        "tip": "Where downloaded torrents are stored on disk.",
+        "children": [
+          { "$": "field", "name": "dl_root", "$type": "string", "label": "Download folder", "readonly": true, "tip": "Downloaded torrents are written here as real files, and the subfolders under it organize your list. Point it at a folder from a previous install to re-adopt everything inside." },
+          { "$": "action", "name": "dl_folder", "label": "Change download folder", "icon": "folder", "style": "secondary", "tip": "Pick the folder where downloads are stored." }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "seeding",
+        "tip": "Pin to keep a full copy and seed it.",
+        "children": [
+          { "$": "field", "name": "pin_on_open", "$type": "bool", "label": "Pin what I download", "default": true, "tip": "After opening a link, keep a full copy and seed it. Turn this off to download without joining the swarm - it works, but a network of pure leechers holds nothing." },
+          { "$": "field", "name": "share_author", "$type": "bool", "label": "Put my identity in shared links", "default": false, "tip": "OFF by default. When on, links you copy include your npub so people know who published it. Leave it off to share anonymously - the folder key alone is enough to download." },
+          { "$": "field", "name": "rescan_min", "$type": "string", "label": "Rescan my folders every (minutes)", "default": "15", "tip": "How often a torrent shared from disk is re-scanned, so files you add or delete on disk are published to the swarm. 0 = never (rescan by hand from Manage)." },
+          { "$": "action", "name": "settings_apply", "label": "Apply", "icon": "save", "style": "primary", "tip": "Save these settings." }
+        ]
+      },
+      { "$": "field", "name": "settings_log", "$type": "log", "label": "This device", "tip": "What this device is currently holding and serving." }
+    ]
+  }
+]

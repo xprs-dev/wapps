@@ -1,0 +1,56 @@
+{
+  "id": "tools.xprs.circles",
+  "version": "0.35.2",
+  "kind": "app",
+  "title": "Circles",
+  "description": "Private, encrypted group chat over Reticulum.",
+  "summary": "Create a Circle and add people to it; everyone in the Circle shares one common end-to-end-encrypted chat. Each Circle keeps its own local sqlite database, messages are encrypted with a shared per-Circle key that rotates by epoch (so an authorised member who was offline can request the keys it missed), and the conversation is exchanged directly between members over the device's Reticulum node.",
+  "icon": "media/icons/circles.svg",
+  "tags": [
+    "chat",
+    "groups",
+    "reticulum",
+    "encrypted",
+    "nostr"
+  ],
+  "entry_ui": "screens/home.ui.json",
+  "tick_interval_ms": 1000,
+  "permissions": [],
+  "platforms": [
+    "linux",
+    "windows",
+    "macos",
+    "android"
+  ],
+  "hardware": [
+    "N/A",
+    "intel",
+    "arm"
+  ],
+  "provides": {
+    "functions": [],
+    "events": [],
+    "variables": [],
+    "functionalities": [],
+    "links": [
+      "/circle/",
+      "xprs://circle",
+      "xprs://circle"
+    ]
+  },
+  "requires": {
+    "hal": [
+      "log",
+      "msg",
+      "kv",
+      "time",
+      "crypto",
+      "sqlite",
+      "rns",
+      "contacts"
+    ],
+    "events": [],
+    "libraries": [],
+    "variables": []
+  }
+}

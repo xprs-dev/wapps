@@ -1,0 +1,48 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.archiver",
+  "wapp_version": "0.5.1",
+  "signed_at": 1787085165,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "520aa8f557438169fc5cdcac3fcf18097bd2d9bf34e57876e170fa2d0c114687",
+  "hashes": {
+    "Makefile": "6d5be150f80084e3b215bd6287ae05aec153f6788e10eb0e88fa9aa3af14ada4",
+    "app.wasm": "eb1d1b7a8d8aa619ee7e9d991e043d977fd6f22e989e4bd0c375210a3b916b4d",
+    "main.c": "da774f271cd2e59feca3d613b938a688edcf8bd7e604e494d8b52fa2e4d5516c",
+    "manifest.json": "60ec91bee55086fbe6ba3ac3ee99ec0d52558de5de80ef58ec0eea4c6535e5f4",
+    "media/icons/archiver.svg": "4b17a5ae1906e036ef30a907f6d783c86926331c96978c144887b327a8eb5788",
+    "screens/home.ui.json": "c3bdf72fc30b91a02ea0300d9ef54c55780971bde06c6e52f8d5c1ff581fbd71"
+  },
+  "event": {
+    "id": "92309f1e88712e23cd67d7f02ebb5de6f1c3159db08de35ccd64a7d817b861ed",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085165,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.archiver"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.archiver"
+      ],
+      [
+        "wapp_version",
+        "0.5.1"
+      ],
+      [
+        "manifest_digest",
+        "520aa8f557438169fc5cdcac3fcf18097bd2d9bf34e57876e170fa2d0c114687"
+      ]
+    ],
+    "content": "520aa8f557438169fc5cdcac3fcf18097bd2d9bf34e57876e170fa2d0c114687",
+    "sig": "b6d381a74018d65b913b2b3ecc377bf58d7c7a3537b8a9c1c623775c171d015f418f5a5a29f800c07e91f6e04799aa42d5c21fa8a57cccdef2ec58fec44eaa00"
+  }
+}

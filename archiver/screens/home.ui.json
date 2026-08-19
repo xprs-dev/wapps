@@ -1,0 +1,87 @@
+[
+  {
+    "$": "screen",
+    "name": "Archiver",
+    "icon": "archive",
+    "tip": "Keeps copies of other people's posts and files, so they survive when the device that made them is offline. Nothing of yours is deleted to make room.",
+    "children": [
+      {
+        "$": "field",
+        "name": "enabled",
+        "$type": "bool",
+        "label": "Enable",
+        "default": false,
+        "apply": "enabled_changed"
+      },
+      {
+        "$": "field",
+        "name": "dashboard",
+        "$type": "stats"
+      },
+      {
+        "$": "field",
+        "name": "quota",
+        "$type": "enum",
+        "label": "Limit (GB)",
+        "default": "5",
+        "apply": "quota_changed",
+        "children": [
+          {
+            "$": "option",
+            "name": "5",
+            "label": "5"
+          },
+          {
+            "$": "option",
+            "name": "20",
+            "label": "20"
+          },
+          {
+            "$": "option",
+            "name": "50",
+            "label": "50"
+          },
+          {
+            "$": "option",
+            "name": "200",
+            "label": "200"
+          }
+        ]
+      },
+      {
+        "$": "field",
+        "name": "followed",
+        "$type": "bool",
+        "label": "Keep files from people I follow",
+        "default": true,
+        "apply": "followed_changed"
+      },
+      {
+        "$": "field",
+        "name": "nearby",
+        "$type": "bool",
+        "label": "Accept from nearby devices",
+        "default": true,
+        "apply": "nearby_changed"
+      },
+      {
+        "$": "field",
+        "name": "mirror",
+        "$type": "bool",
+        "label": "Take load off nearby phones",
+        "default": true,
+        "apply": "mirror_changed"
+      },
+      {
+        "$": "action",
+        "name": "free_space",
+        "label": "Free space",
+        "icon": "delete",
+        "style": "danger",
+        "confirm": true,
+        "confirm-label": "Delete archived storage?",
+        "confirm-text": "Everything this device is keeping for other people will be deleted. Your own files, and anything you chose to keep, are not touched."
+      }
+    ]
+  }
+]

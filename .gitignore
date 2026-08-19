@@ -1,0 +1,17 @@
+# Per-wapp build artefacts and runtime state.
+*.wasm.tmp
+*~
+*.swp
+.DS_Store
+
+# Per-wapp social store files generated when a wapp runs in dev.
+# The shipped social DBs live inside the .wapp ZIP under
+# binaries/, not in the source folders.
+*/social.sqlite3
+
+# Local profile leakage if someone mounts a profile folder here.
+*/kv.json
+
+# Editor / OS noise.
+.vscode/
+.idea/

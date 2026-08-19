@@ -1,0 +1,66 @@
+[
+  {
+    "$": "screen",
+    "name": "@screen.forum",
+    "tip": "@screen.forum_tip",
+    "children": [
+      {
+        "$": "group",
+        "$type": "header-actions",
+        "children": [
+          { "$": "action", "name": "back", "icon": "close",
+            "label": "@action.back" },
+          { "$": "action", "name": "refresh", "icon": "refresh",
+            "label": "@action.refresh" },
+          { "$": "action", "name": "new-thread", "icon": "add",
+            "label": "@action.new_thread" }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "view",
+        "$type": "cards",
+        "layout": "list",
+        "empty": "@empty.forum"
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "@screen.compose",
+    "tip": "@screen.compose_tip",
+    "children": [
+      {
+        "$": "group",
+        "name": "compose",
+        "children": [
+          {
+            "$": "field",
+            "name": "title",
+            "$type": "string",
+            "label": "@field.title",
+            "tip": "@field.title_tip",
+            "default": ""
+          },
+          {
+            "$": "field",
+            "name": "body",
+            "$type": "string",
+            "label": "@field.body",
+            "tip": "@field.body_tip",
+            "multiline": true,
+            "lines": 8,
+            "default": ""
+          },
+          {
+            "$": "action",
+            "name": "post",
+            "label": "@action.post",
+            "tip": "@action.post_tip",
+            "icon": "save"
+          }
+        ]
+      }
+    ]
+  }
+]

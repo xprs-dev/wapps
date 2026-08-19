@@ -1,0 +1,28 @@
+{
+  "id":              "tools.xprs.forum",
+  "version":         "0.1.1",
+  "kind":            "app",
+  "title":           "Forum",
+  "description":     "Browse and post in forum collections.",
+  "summary":         "Read sections, threads, and replies stored as a forum collection in your profile. Compose new threads and replies, signed with your NOSTR keys. Format matches the XPRS forum spec, so files are interchangeable with the native forum browser.",
+  "icon":            "media/icons/forum.svg",
+  "tags":            ["forum", "social", "community"],
+  "entry_ui":        "screens/home.ui.json",
+  "permissions": [
+    "collection.forum.read",
+    "collection.forum.write",
+    "identity.read",
+    "sign"
+  ],
+  "provides": {
+    "functions": [],
+    "events":    [],
+    "variables": []
+  },
+  "requires": {
+    "hal":       ["log", "kv", "msg"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

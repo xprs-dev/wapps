@@ -1,0 +1,17 @@
+{
+  "screen.forum": "Forum",
+  "screen.forum_tip": "Browse sections, threads and replies.",
+  "screen.compose": "Compose",
+  "screen.compose_tip": "Write a new thread or reply.",
+  "field.title": "Title",
+  "field.title_tip": "Title for a new thread (ignored when replying).",
+  "field.body": "Message",
+  "field.body_tip": "Your message text. Markdown is preserved verbatim.",
+  "action.post": "Post",
+  "action.post_tip": "Submit the message. Signed with your NOSTR keys when available.",
+  "action.cancel": "Cancel",
+  "action.back": "Back",
+  "action.refresh": "Refresh",
+  "action.new_thread": "New thread",
+  "empty.forum": "No forum collection yet. Create one from the native client to get started."
+}

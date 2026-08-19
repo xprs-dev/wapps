@@ -1,0 +1,52 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.tasks",
+  "wapp_version": "1.0.2",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "8ca45fb28955103bab49960bde268ffd746c71bb2f4df1784f36ac4ff3fdc44d",
+  "hashes": {
+    "Makefile": "63abcdf4213733805946033fa86fd7ea248a03d8055cfc7cc4a31e88e2d09928",
+    "app.wasm": "fafefcb954bfc0328f28480c9b56c340654c34ca8e4abad632ef117286277920",
+    "lang/de.json": "037461f96952aa0f21c997d98bd95fd8785dc77df1c74c32ab74ef13e659ed80",
+    "lang/en.json": "267c2f72bad596d930b0ebee3398f9fd2eacd1dd91487fad4c7f950b654027f6",
+    "lang/pt.json": "67ebe3e709f760ab9933c6729fa73ceb3ce643753874b14a4e9c23927821c9b8",
+    "main.c": "5b3991453136695630d128cf5624449996af8714367f390789b4cfc1ddc3e789",
+    "manifest.json": "70de20842530de30628c9ec949bcc366ca629656e5a931fdad6928805f82eb3b",
+    "media/icons/tasks.svg": "633903a721bdfc615afe62a0a4668b79cbae5abbb3ea22a402f55d5ac10f162a",
+    "permissions.json": "dcf3a0a054ed161431583b8163d5adc0805aed6fd5696fbd1c94a7aab7f7cb81",
+    "screens/home.ui.json": "8e3ca1e08059a3c795323fe840bb4139b85eb4e8077bba599e356e02964203a8"
+  },
+  "event": {
+    "id": "f1f6083bfa942b6eb0038758de40388ed51870626a5cbb528791b4059028fe05",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.tasks"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.tasks"
+      ],
+      [
+        "wapp_version",
+        "1.0.2"
+      ],
+      [
+        "manifest_digest",
+        "8ca45fb28955103bab49960bde268ffd746c71bb2f4df1784f36ac4ff3fdc44d"
+      ]
+    ],
+    "content": "8ca45fb28955103bab49960bde268ffd746c71bb2f4df1784f36ac4ff3fdc44d",
+    "sig": "dc6d525a2c4d16f9a4ae8d7a839d2c2c98317adc6f749844a8e84397b76e313fde642b3c46891700a4917c33037ab5c7d601a66811eba3a688e8733b5ef2baba"
+  }
+}

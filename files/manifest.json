@@ -1,0 +1,25 @@
+{
+  "id":              "tools.xprs.files",
+  "version":         "0.9.3",
+  "kind":            "system",
+  "title":           "Share",
+  "description":     "Share files and folders - over Reticulum, Blossom HTTP and BitTorrent.",
+  "summary":         "Share files and folders from this device. Add a file to get a shareable token, or share a whole folder from disk (served straight from disk, contents kept in sync and signed). Browse folders others share by their key, choose what to download, and make your archive reachable over Reticulum, a Blossom-compatible HTTP endpoint and a BitTorrent seeder.",
+  "icon":            "media/icons/files.svg",
+  "tags":            ["files", "share", "torrent", "blossom", "media"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 1000,
+  "permissions":     ["network", "storage"],
+  "platforms":       ["linux", "windows", "macos", "android"],
+  "provides": {
+    "functions": [],
+    "events":    [],
+    "variables": []
+  },
+  "requires": {
+    "hal":       ["log", "kv", "msg"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

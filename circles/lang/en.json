@@ -1,0 +1,6 @@
+{
+  "screen.circles": "Circles",
+  "screen.circles_tip": "Your circles — private, encrypted group chats.",
+  "screen.me": "Me",
+  "screen.me_tip": "Your identity key — share your npub so others can add you."
+}

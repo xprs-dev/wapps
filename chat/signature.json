@@ -1,0 +1,70 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.chat",
+  "wapp_version": "0.4.46",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "2957d5c8157c602218ec35167487db1f15878096b72cd01bbc5a7a499deaf577",
+  "hashes": {
+    "BLE_PROTOCOL.md": "4eceb56d06a27539688aff0eaf7df1f1f6211a953df253a19a82df32983feee8",
+    "Makefile": "7a4b2108f20924dd99a010706afc01bba12c6d9e63f4623c6adf28f70bca875c",
+    "app.wasm": "690bb57e0dd4d9e1216e59f5eb0c937454fd58830f615caf6019594ab6fc2047",
+    "ble.c": "21631dc2032dbf13e953b317a413c9bb447138b420140a23927d652677347d7a",
+    "ble.h": "85216f72a2c4dbfe3295889936e16b552c7fa55b35a07d508514aa25ccc09d5a",
+    "chat.c": "3628038f384cba04e9a6ea4e37469e5e534f07f4fe1ff90e0835af8bdac114b2",
+    "chat.h": "a9746ed37dac98f7fc625880840a2abd6c5cf3e5a5eb0d25326408bf5ce90dbb",
+    "lang/en.json": "ab5c18d859840b65c040d96d35fc97ae11bd68488dd8b89c0e0798edd75b92bd",
+    "main.c": "2cd8c79f1422aa80254d095ae9ee20a3448d41cafa2cd6ac06b5cee5fb1fc58e",
+    "manifest.json": "84f43f1ef4338ce5a385143c8f702cffd4d7fc4b3a8152419ab10c93f1db9a8b",
+    "media/icons/chat.svg": "07369dcb2433c59de08a14204e077de0ebae4ceca1045dad61210a826e135645",
+    "permissions.json": "af49517ab02f4315664d280a0226c07f20fd765bd644d0c1813d86ec0ecdc5a1",
+    "room.c": "186c6a163069bb2652e7d18df3a2cf3dbf1626c7d5b1a62dd07451a4f6a10a30",
+    "room.h": "f98370f6bc5fd651b6caea9359d3d4881c5cba11d2a1d7abaf81f6b4932c0769",
+    "screens/home.ui.json": "c34570f481e7c689bfc3ffd3881db4730b0cafb6f2cbecf75225ea44cb4f59db",
+    "source.json": "afd4fd8b6cab9d03b4be7a3162c22282fb8aba5df7f3b6aabf7fb891c51406ad",
+    "tests.wasm": "fa13d8ab91eee709f3fc222e0e7605d3fc3e277279251c25541c4a8c3621d24d",
+    "tests/disabled.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "tests/integration/it_aprs_is.c": "00d66dba592635b5bed5166ac7790739f8bc98dd3b8e4a49c2328f73cec03752",
+    "tests/integration/run.sh": "bfe11f904040005a7388baa5206864c2a01915de217fc105cb746233ad99d45b",
+    "tests/test_chat.c": "f127dc55b634c014e0998fbc5394d7afff77bc7fc0dff671aac60c39a2dc0f05",
+    "tests/test_live_chat.c": "490d247c40a9b2e2c9101676a0265e78df4d251dd739b9ee76c5e1d787e2bf03",
+    "tests/test_thread.c": "1945e3636983f230fc5997d7db3a7aa2d8f3f2305df9c732a281793da2979fe6",
+    "tests/test_xprs.c": "738e18e623ed8ad4cb9842681007ba48879120ff0e5336d7791df201f06cb4f0",
+    "thread.c": "b3f2c7d300539394343584b24026fb8e7720fd00d8d0a01a7fe977cdcdbebde9",
+    "thread.h": "81b6c1fa0cba6ef58114e723743aa8a362f5fd5b723c60f727b8cb1d964b7843",
+    "xprs.c": "58684541a8aec2ae29c90f18896b7bf2d6c7f2f064b63311c40fa7aa733366fb",
+    "xprs.h": "4ac2ec9232b128d227487c62d20e0e806e2ac3a19a465b24372163a78974f2d5"
+  },
+  "event": {
+    "id": "4a248f3cf15dc67a801353d81db127f9202a781d88f8eb87c5bed9a1bb6d5809",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.chat"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.chat"
+      ],
+      [
+        "wapp_version",
+        "0.4.46"
+      ],
+      [
+        "manifest_digest",
+        "2957d5c8157c602218ec35167487db1f15878096b72cd01bbc5a7a499deaf577"
+      ]
+    ],
+    "content": "2957d5c8157c602218ec35167487db1f15878096b72cd01bbc5a7a499deaf577",
+    "sig": "5c091a3bb548046d0f66ddb83084e2beeaeb6dd7520c650b19220da89a8d83239642d840281056edcd79cabd645ec4c453c6cd32b99f07c24d801dedb10763e8"
+  }
+}

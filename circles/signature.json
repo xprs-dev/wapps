@@ -1,0 +1,60 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.circles",
+  "wapp_version": "0.35.2",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "3ac1f9e0277b2e28580005534c6de582e112d73fbcf2f685da2df67dedf0c1c7",
+  "hashes": {
+    "Makefile": "39b27ee34778b584d023ef693d668df406fdf7228495cf57bbacc9784c896ff7",
+    "app.wasm": "4ea620d93046fc4f6e422663a481b40b2c32a0f4887df322fe0bc427d2b1c40d",
+    "circle.c": "b844341c1032eee3026d2d5a2625f7e0abe7d664c391c0bc37565f378e6d152c",
+    "circle.h": "1b05ccfb1b9fa0f95c141c4c8f9b66a2653d385c3ba3c02cb5d90be36e9cbf22",
+    "db.c": "6753d6657e0fd3350968ca9be785ca390c91e3ea349a2b114ff4b87276bf78ec",
+    "db.h": "c2307e0a6a27fc67df1cc53d7c0162c10a408b9caf22610c57b057168a3ac223",
+    "lang/en.json": "9a18153e4ff5e9d89974db80d1b5c038dafb4f98a300e29f05ad0d79f059cd39",
+    "main.c": "4763b6d7a1c21f798cd9aac3f4a43f04e6a70cbd5e140f56600d62e528864821",
+    "manifest.json": "5f6fa57d146b85c98fe341d6afb0de84eae69bf22ef5ebdcea488000ee791df1",
+    "media/icons/circles.svg": "727402a62b1e4c12b7e79d086affd37132cbacbfbae8be3596d24617c7a793e0",
+    "screens/home.ui.json": "69cd4ab36952efcd8c9f9839d1237b7cedcae1fff7ab40cd5fda6881a0897635",
+    "tests.wasm": "6749d6b5dc3c52c2e384673880acf8451c1c59a24efa51729d273519ea4624df",
+    "tests/native/hal_mock.c": "ddee02d0ca2931c7ea4c72c365a54aeb0475091e28af5f954fb352150295d4f2",
+    "tests/native/run.sh": "11ebc542152c511265a0e77931d85eea098464ee3dc636637a23c3195ff37bf1",
+    "tests/native/test_folders.c": "82dc7975d08d120a6b2589e6900ebacc00b02f2d6e3d689b34d33e4779314c2b",
+    "tests/test_util.c": "0fdfa498491549a55ca31cf146ceedcff7ff31c47147751b57001f845eff53de",
+    "util.c": "6e8fb5c57a64ebbb43bc80fbb8df08f0ca4982010c3dfe332f5e1823109aa8f1",
+    "util.h": "f78c202e09950e8c5e5857a83b719abc21f3763dc86567fb78960f71ae8a8a15"
+  },
+  "event": {
+    "id": "c82bd6e0abf76bb499fb01b917c10354f5e0b5bdc2802cf7899e281d624c43c9",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.circles"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.circles"
+      ],
+      [
+        "wapp_version",
+        "0.35.2"
+      ],
+      [
+        "manifest_digest",
+        "3ac1f9e0277b2e28580005534c6de582e112d73fbcf2f685da2df67dedf0c1c7"
+      ]
+    ],
+    "content": "3ac1f9e0277b2e28580005534c6de582e112d73fbcf2f685da2df67dedf0c1c7",
+    "sig": "8ffa64ab5f66afaf378ecda9c59cc09e8fb44ee374d9d8b568280070b04fbc0dedb085153ecdf7a61e28920fb137d441e8709c304a658ded3bc4959ff30ed7eb"
+  }
+}

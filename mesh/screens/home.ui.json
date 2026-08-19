@@ -1,0 +1,14 @@
+[
+  {
+    "$": "screen",
+    "name": "Mesh",
+    "tip": "The mesh — Reticulum and XPRS — as this node has observed it",
+    "children": [
+      {
+        "$": "group",
+        "name": "network-graph",
+        "$type": "graph"
+      }
+    ]
+  }
+]

@@ -1,0 +1,28 @@
+{
+  "id":              "tools.xprs.bluetooth",
+  "version":         "0.2.1",
+  "kind":            "app",
+  "title":           "Bluetooth",
+  "description":     "Bluetooth - the BLE street mesh: devices within reach and how far messages can travel.",
+  "summary":         "Shows every device the BLE street mesh can see: direct neighbors heard over route beacons (with device type, power state, uptime and link quality) and destinations reachable multi-hop. The mesh exchanges compact routing beacons so messages can travel up to 6 hops between phones with no infrastructure.",
+  "icon":            "media/icons/bluetooth.svg",
+  "color":           "#1565C0",
+  "tags":            ["bluetooth", "mesh", "ble", "network", "devices"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 2000,
+  "permissions":     [],
+  "platforms":       ["linux", "windows", "macos"],
+  "hardware":        ["N/A", "intel", "arm"],
+  "provides": {
+    "functions":       [],
+    "events":          [],
+    "variables":       [],
+    "functionalities": []
+  },
+  "requires": {
+    "hal":       ["log", "msg", "kv", "mesh"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

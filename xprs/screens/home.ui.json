@@ -1,0 +1,113 @@
+[
+  {
+    "$": "screen",
+    "name": "Traffic",
+    "icon": "list_alt",
+    "search": true,
+    "tip": "Every XPRS packet heard and which bearer carried it - including packets meant for other stations. Tap one to read it in full.",
+    "children": [
+      {
+        "$": "field",
+        "name": "packets",
+        "$type": "people",
+        "empty": "Nothing heard yet.\nLeave Bluetooth on, or bring another station into range.\n\nThis view is radio only - a peer reached over the internet never appears here."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Packet",
+    "icon": "description",
+    "hidden": true,
+    "tip": "One packet, field by field.",
+    "children": [
+      {
+        "$": "field",
+        "name": "detail",
+        "$type": "details",
+        "empty": "Pick a packet on the Traffic screen."
+      },
+      {
+        "$": "action",
+        "name": "detail_fav",
+        "label": "Favourite",
+        "icon": "favorite"
+      },
+      {
+        "$": "action",
+        "name": "detail_back",
+        "label": "Back to traffic",
+        "icon": "list"
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Stations",
+    "icon": "radar",
+    "tip": "Stations heard over the air only - BLE, LAN or LoRa. Never the internet.",
+    "children": [
+      {
+        "$": "field",
+        "name": "stations",
+        "$type": "people",
+        "empty": "Nothing heard yet.\nLeave Bluetooth on, or bring another station into range."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Carry",
+    "icon": "luggage",
+    "tip": "Mail the stations around you are carrying. Open a station's bag and choose what to take with you - what you take, you deliver when its recipient is next in your range.",
+    "children": [
+      {
+        "$": "field",
+        "name": "remote",
+        "$type": "people",
+        "empty": "No station in range says it is carrying mail.\n\nA station announces its load in its beacon; when one appears on the Stations screen with a mail count, its bag opens here."
+      },
+      {
+        "$": "action",
+        "name": "remote_carry",
+        "label": "Carry selected",
+        "icon": "luggage"
+      },
+      {
+        "$": "action",
+        "name": "remote_back",
+        "label": "All stations",
+        "icon": "radar"
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Carried",
+    "icon": "archive",
+    "menu": true,
+    "tip": "Mail this device is holding for other people, so it reaches them when they are next in range. A mesh where nobody carries only works when both people are awake and in range at the same moment - which is the thing store-and-forward exists to fix.",
+    "children": [
+      {
+        "$": "field",
+        "name": "carry_on",
+        "$type": "bool",
+        "label": "Carry mail for other stations",
+        "tip": "On by default. Off keeps your own outgoing mail but accepts nothing on anyone else's behalf.",
+        "apply": "carry_apply"
+      },
+      {
+        "$": "field",
+        "name": "held",
+        "$type": "people",
+        "empty": "Carrying nothing right now.\n\nWhen a neighbour hands over mail for someone out of range, it waits here until that station is heard again."
+      },
+      {
+        "$": "action",
+        "name": "held_refresh",
+        "label": "Refresh",
+        "icon": "refresh"
+      }
+    ]
+  }
+]

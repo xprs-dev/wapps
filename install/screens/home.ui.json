@@ -1,0 +1,49 @@
+[
+  {
+    "$": "screen",
+    "name": "@screen.store",
+    "icon": "storefront",
+    "tip": "@screen.store_tip",
+    "children": [
+      {
+        "$": "group",
+        "$type": "header-actions",
+        "children": [
+          {
+            "$": "group",
+            "$type": "menu",
+            "icon": "more_vert",
+            "tip": "Options",
+            "children": [
+              { "$": "action", "name": "refresh", "label": "Refresh", "icon": "refresh" },
+              { "$": "action", "name": "view-list", "label": "List view", "icon": "view_list" },
+              { "$": "action", "name": "view-grid", "label": "Grid view", "icon": "grid_view" },
+              { "$": "action", "name": "open-sources", "label": "Repositories…", "icon": "tune" }
+            ]
+          }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "catalog",
+        "$type": "cards",
+        "layout": "list",
+        "empty": "No wapps found yet. Open the menu (top right) → Repositories to add one."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "@screen.sources",
+    "hidden": true,
+    "tip": "@screen.settings_tip",
+    "children": [
+      {
+        "$": "group",
+        "name": "@group.sources_name",
+        "$type": "sources",
+        "tip": "@group.sources_tip"
+      }
+    ]
+  }
+]

@@ -1,0 +1,48 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.wallet",
+  "wapp_version": "0.2.1",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "1da646084f3cea5c3e4a74410149780babc4bf74e56fe902259870ec1a7cc9cc",
+  "hashes": {
+    "Makefile": "6d5be150f80084e3b215bd6287ae05aec153f6788e10eb0e88fa9aa3af14ada4",
+    "app.wasm": "bd12c42bfbec868d6a0f3b56a902d16df35471088f2d27ea28ce53aa3e274246",
+    "main.c": "cea67d83282a508799f4bdf0aa7d0d0a67fc9740a79f849fca9e1cfadb4482ef",
+    "manifest.json": "d574a3e75dc504f7cc8f984e07303ef4c0989df6e08ad2bd6af6a4e451a03c33",
+    "media/icons/wallet.svg": "a14a646b08a1a56672587d06228bd8cc9299bee29d8f07e6b8bab3b45bb5533d",
+    "screens/home.ui.json": "f46955a2d5fb2736fc9772e02a38ea24072093d35b77114076e9fa017673e31f"
+  },
+  "event": {
+    "id": "6ab2951281a7036c3698c379cefed9a961690539c7eda7a91d0d08557036c32b",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.wallet"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.wallet"
+      ],
+      [
+        "wapp_version",
+        "0.2.1"
+      ],
+      [
+        "manifest_digest",
+        "1da646084f3cea5c3e4a74410149780babc4bf74e56fe902259870ec1a7cc9cc"
+      ]
+    ],
+    "content": "1da646084f3cea5c3e4a74410149780babc4bf74e56fe902259870ec1a7cc9cc",
+    "sig": "1573cc0e04aab461d99facc3d38c8d60f740b760e8a92b40de4f400302809cae2e00f18ac9d821ea780d94bd7ccb420a322867ababc47505ccd7a3c597994a84"
+  }
+}

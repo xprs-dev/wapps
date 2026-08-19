@@ -1,0 +1,51 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.mesh",
+  "wapp_version": "1.1.1",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "ffb964a1ca7eb796c227f55aa542e9f63de297f1db23819613dd1ccc7f58aa60",
+  "hashes": {
+    "Makefile": "6d5be150f80084e3b215bd6287ae05aec153f6788e10eb0e88fa9aa3af14ada4",
+    "app.wasm": "744ce157e5a10be16d612df5760453159ff4e0f9b3f611a3276dd86d6571fb91",
+    "main.c": "abb66f66d5d032d7943d6cc516555dc2679a32165c9e8baa1f29b59d33d7f822",
+    "manifest.json": "91138fa36527eaf1134a34745bb1bb790241898c74a6d00bcd8be1d9d91abb34",
+    "media/icons/mesh.svg": "e6845bebfe5552c1b1cd459c031c875f3b4569d1c74ee3e04aef4241e5d09e5a",
+    "screens/home.ui.json": "f47169b5251b0c6ef8d805c3905bc9267683a391735430145b27330b03804fa6",
+    "tests/native/hal_mock.c": "2a4ab769c93bf1d97c4c30422b178f59648256977408df30e0f86e9cd50b3bf2",
+    "tests/native/run.sh": "d1c1287d5f06a6128897ee59ca1e1f865f1d5137fb09237d7820955602e33480",
+    "tests/native/test_mesh.c": "17425ab003a2c97722650a16ce93c74d42c2f63b66b01e5f1e87952604dd7920"
+  },
+  "event": {
+    "id": "56a0754e8e678db2b13ec91e537a3a747a06deac4b3f566d5901e209d46e83ff",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.mesh"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.mesh"
+      ],
+      [
+        "wapp_version",
+        "1.1.1"
+      ],
+      [
+        "manifest_digest",
+        "ffb964a1ca7eb796c227f55aa542e9f63de297f1db23819613dd1ccc7f58aa60"
+      ]
+    ],
+    "content": "ffb964a1ca7eb796c227f55aa542e9f63de297f1db23819613dd1ccc7f58aa60",
+    "sig": "9efb9bf670310e648f6cd6be0fa12ef10a02566e708470b9d465d2bdf547060f829785cb2cd318067aa614cac22208870295ee9a01292cb6af733ddb9db7c636"
+  }
+}

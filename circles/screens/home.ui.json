@@ -1,0 +1,144 @@
+[
+  {
+    "$": "screen",
+    "name": "Circles",
+    "icon": "group",
+    "tip": "Your circles — private, encrypted group chats. Tap one to open its shared conversation.",
+    "children": [
+      {
+        "$": "group",
+        "name": "conversations",
+        "$type": "conversations",
+        "label": "Circles",
+        "children": [
+          { "$": "action", "name": "new_circle", "icon": "add", "slot": "list", "tip": "Create a new circle" },
+          { "$": "action", "name": "join_circle", "icon": "person_add", "slot": "list", "tip": "Join a circle from a key or QR" },
+          { "$": "action", "name": "edit_circle", "icon": "edit", "slot": "room", "label": "Edit circle", "tip": "Edit this circle" },
+          { "$": "action", "name": "manage_people", "icon": "people", "slot": "room", "label": "People", "tip": "People in this circle" },
+          { "$": "action", "name": "folder_new", "icon": "add", "slot": "room", "label": "New folder", "tip": "Create a folder in this circle" },
+          { "$": "action", "name": "share_circle", "icon": "share", "slot": "room", "label": "Share", "tip": "Share this circle" },
+          { "$": "action", "name": "delete_circle", "icon": "delete", "slot": "room", "label": "Delete circle", "tip": "Remove this circle from this device" }
+        ]
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Edit circle",
+    "hidden": true,
+    "children": [
+      {
+        "$": "group",
+        "name": "Circle",
+        "children": [
+          { "$": "field", "name": "edit_pic", "$type": "image", "label": "Picture", "tip": "A picture for this circle." },
+          { "$": "field", "name": "edit_name", "$type": "string", "label": "Name", "hint": "Circle name", "max": 40 },
+          { "$": "field", "name": "edit_desc", "$type": "string", "label": "Description", "hint": "What is this circle about?", "multiline": true, "lines": 4, "max": 250 }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "Roles",
+        "tip": "Roles people can have in this circle, and which one new people get by default.",
+        "children": [
+          { "$": "action", "name": "manage_roles", "label": "Manage roles", "icon": "tune" }
+        ]
+      },
+      { "$": "action", "name": "edit_save", "label": "Save", "icon": "save", "style": "primary" }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Roles",
+    "hidden": true,
+    "children": [
+      { "$": "field", "name": "roles", "$type": "people", "empty": "No roles yet — tap Add to create one." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Edit role",
+    "hidden": true,
+    "children": [
+      {
+        "$": "group",
+        "name": "Role",
+        "children": [
+          { "$": "field", "name": "role_name", "$type": "string", "label": "Name", "hint": "e.g. moderator", "max": 40 },
+          { "$": "field", "name": "role_desc", "$type": "string", "label": "Description", "hint": "What this role can do", "multiline": true, "lines": 3, "max": 200 },
+          { "$": "field", "name": "role_default", "$type": "bool", "label": "Default for new people" }
+        ]
+      },
+      { "$": "action", "name": "role_save", "label": "Save role", "icon": "save", "style": "primary" },
+      { "$": "action", "name": "role_delete", "label": "Delete role", "icon": "delete" }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Share circle",
+    "hidden": true,
+    "children": [
+      { "$": "field", "name": "share_qr", "$type": "qr", "tip": "Let someone scan this to open the app and apply to join." },
+      { "$": "field", "name": "share_link", "$type": "string", "label": "Link", "readonly": true, "copy": true, "tip": "Send this link — tapping it opens the app on the join screen." },
+      { "$": "field", "name": "share_id", "$type": "string", "label": "Full key", "readonly": true, "copy": true, "tip": "The complete key, for manual entry." },
+      { "$": "field", "name": "share_short", "$type": "string", "label": "Short code", "readonly": true, "copy": true, "tip": "A short shorthand for talking about this circle." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "People",
+    "hidden": true,
+    "children": [
+      { "$": "field", "name": "members", "$type": "people", "empty": "No people yet — tap Add to invite someone." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Folder view",
+    "hidden": true,
+    "children": [
+      { "$": "field", "name": "folderrail", "$type": "rail" },
+      { "$": "field", "name": "folderchat", "$type": "chat", "hint": "Message this folder…" },
+      { "$": "action", "name": "folder_new", "label": "New subfolder", "icon": "create_new_folder" },
+      { "$": "action", "name": "folder_settings", "label": "Folder settings", "icon": "settings" },
+      { "$": "action", "name": "folder_access_cur", "label": "Access", "icon": "lock" }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Folder editor",
+    "hidden": true,
+    "children": [
+      {
+        "$": "group",
+        "name": "Folder",
+        "children": [
+          { "$": "field", "name": "folder_name", "$type": "string", "label": "Name", "hint": "e.g. Press, Logistics", "max": 48 },
+          { "$": "field", "name": "folder_desc", "$type": "string", "label": "Description", "hint": "What this folder is for", "multiline": true, "lines": 3, "max": 200 },
+          { "$": "field", "name": "folder_icon", "$type": "icon", "label": "Icon" },
+          {
+            "$": "field", "name": "folder_type", "$type": "enum", "label": "Type",
+            "tip": "Chat now; container holds sub-folders. Blog, gallery and forum are coming soon.",
+            "children": [
+              { "$": "option", "name": "chat", "label": "Chat" },
+              { "$": "option", "name": "folder", "label": "Folder" },
+              { "$": "option", "name": "blog", "label": "Blog" },
+              { "$": "option", "name": "gallery", "label": "Gallery" },
+              { "$": "option", "name": "forum", "label": "Forum" }
+            ]
+          }
+        ]
+      },
+      { "$": "action", "name": "folder_save", "label": "Save folder", "icon": "save", "style": "primary" },
+      { "$": "action", "name": "folder_delete", "label": "Delete folder", "icon": "delete" }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Folder access",
+    "hidden": true,
+    "children": [
+      { "$": "field", "name": "faccess", "$type": "people", "empty": "No roles or people yet." }
+    ]
+  }
+]

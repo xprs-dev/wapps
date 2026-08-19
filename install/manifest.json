@@ -1,0 +1,42 @@
+{
+  "id": "tools.xprs.install",
+  "version": "1.3.8",
+  "kind": "system",
+  "title": "Wapp Store",
+  "description": "Browse, install and update wapps from any catalog.",
+  "summary": "Discover, install and update wapps from any repository. The local wapp store for XPRS — points at the official catalog by default and accepts user-defined sources (URLs or local paths) on the Settings tab.",
+  "icon": "media/icons/install.svg",
+  "tags": [
+    "tools",
+    "installer",
+    "shop",
+    "system"
+  ],
+  "entry_ui": "screens/home.ui.json",
+  "tick_interval_ms": 1000,
+  "permissions": [
+    "storage",
+    "network"
+  ],
+  "provides": {
+    "functions": [],
+    "events": [
+      "wapp.installed",
+      "wapp.removed"
+    ],
+    "variables": []
+  },
+  "requires": {
+    "hal": [
+      "log",
+      "kv",
+      "http",
+      "file",
+      "msg",
+      "platform"
+    ],
+    "events": [],
+    "libraries": [],
+    "variables": []
+  }
+}

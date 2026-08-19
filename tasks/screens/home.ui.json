@@ -1,0 +1,15 @@
+[
+  {
+    "$": "screen",
+    "name": "@screen.tasks",
+    "tip": "@screen.tasks_tip",
+    "children": [
+      {
+        "$": "group",
+        "name": "task-list",
+        "$type": "tasks",
+        "tip": "@group.task_list_tip"
+      }
+    ]
+  }
+]

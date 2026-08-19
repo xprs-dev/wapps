@@ -1,0 +1,49 @@
+{
+  "id": "tools.xprs.xprs",
+  "version": "0.4.1",
+  "kind": "app",
+  "title": "XPRS",
+  "description": "XPRS - stations heard over the air, the packets they sent, and the mail this device carries for other people.",
+  "summary": "Every station this device has heard over a radio bearer - Bluetooth, LAN or LoRa - and never over the internet. Browse the packets by kind, star the ones worth keeping (a favourite keeps its own copy, so it survives the ring), and open any one to read it field by field with what each field means. The Carried tab shows the mail this device is holding for stations that were out of range, and lets the owner stop carrying if they would rather not.",
+  "icon": "media/icons/xprs.svg",
+  "color": "#00796B",
+  "tags": [
+    "xprs",
+    "radio",
+    "packet",
+    "diagnostics",
+    "mesh"
+  ],
+  "entry_ui": "screens/home.ui.json",
+  "tick_interval_ms": 3000,
+  "permissions": [],
+  "platforms": [
+    "linux",
+    "windows",
+    "macos",
+    "android"
+  ],
+  "hardware": [
+    "N/A",
+    "intel",
+    "arm"
+  ],
+  "provides": {
+    "functions": [],
+    "events": [],
+    "variables": [],
+    "functionalities": []
+  },
+  "requires": {
+    "hal": [
+      "kv",
+      "log",
+      "mesh",
+      "msg",
+      "xprs"
+    ],
+    "events": [],
+    "libraries": [],
+    "variables": []
+  }
+}

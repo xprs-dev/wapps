@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- Two people, drawn edge-to-edge in currentColor.
+       This icon used to carry its OWN purple rounded rect, painted inside a
+       launcher tile that is already purple — so its background was invisible and
+       only the small glyph in the middle of it showed, at roughly half the size
+       of every other icon on the launcher. The tile paints the background; the
+       icon fills the canvas. Same convention as chat/messages/reticulum. -->
+
+  <!-- The person behind: smaller, softer, tucked in at the right. -->
+  <g fill="currentColor" opacity="0.5">
+    <circle cx="17.4" cy="7" r="3"/>
+    <path d="M17.9 12.6c2.9.3 5.1 2.3 5.1 5.2v1.4h-3.6v-1.5c0-1.9-.5-3.6-1.5-5.1z"/>
+  </g>
+
+  <!-- The person in front: the shape you actually read at 40px. -->
+  <g fill="currentColor">
+    <circle cx="9.5" cy="7.4" r="4.6"/>
+    <path d="M9.5 14c4.7 0 8 2.6 8 6.4v1.1H1.5v-1.1c0-3.8 3.3-6.4 8-6.4z"/>
+  </g>
+</svg>

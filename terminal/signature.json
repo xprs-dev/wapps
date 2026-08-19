@@ -1,0 +1,53 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.terminal",
+  "wapp_version": "1.0.2",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "fa834ebc934e18384fb6b2a93e05d4dd154187dcc3accbf7c5f34f366f637c1d",
+  "hashes": {
+    "Makefile": "6d5be150f80084e3b215bd6287ae05aec153f6788e10eb0e88fa9aa3af14ada4",
+    "app.wasm": "7de9c2879e3001c9505bce2b9be003a0531064bc4735432c5ac1db18f3ad7e17",
+    "lang/de.json": "77bf6ee1f77f28601714f66d9cef3f54fd5cf8452479c66906c2045a2e22df77",
+    "lang/en.json": "839c3441969376156ccd544e8e45458746983030491b0a3959e62bc9bc4dbd95",
+    "lang/pt.json": "47136bf93a6812f5672f697f39a1b63ef04fc9aece41e5c1009ebf3f71363a76",
+    "main.c": "41052f7497918f57ffd1945f08e88197bdfb313cbb3db753e5dc619d4977cbb8",
+    "manifest.json": "9a63c3c9b65f741c1239c366c5fd4457e5ecc73d0adee60f8b8b43c054f4cd8d",
+    "media/icons/terminal.svg": "8d6f9092440622934c3dacd0207e18b2c04741f8b486e0623be6322613989872",
+    "permissions.json": "932628bf0a09f494f3b30f2462b9bb2fb37a4c4fff6c89960de60b402fcba9d6",
+    "screens/home.ui.json": "57125d6c1a56ba07c5e637799baa4096ebf9d14472de390969265a41cd6e5700",
+    "screens/settings.ui.json": "83e28e2a18350d4fdcf84f0b817af3efe3c1cce5a4494d0bb0a3d83f0e46ed85"
+  },
+  "event": {
+    "id": "64c79138b627c18962ad3d85f065e5be3cf9d72c00c215210ae3d6007da50dab",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.terminal"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.terminal"
+      ],
+      [
+        "wapp_version",
+        "1.0.2"
+      ],
+      [
+        "manifest_digest",
+        "fa834ebc934e18384fb6b2a93e05d4dd154187dcc3accbf7c5f34f366f637c1d"
+      ]
+    ],
+    "content": "fa834ebc934e18384fb6b2a93e05d4dd154187dcc3accbf7c5f34f366f637c1d",
+    "sig": "e6dbd72408eb62b9562db475651ca20e2db6138bfaf6997219c112b5637598cb761aa51a6cb5b79ad2130f0f8a55dd55806927c379ece840a739168d7992e974"
+  }
+}

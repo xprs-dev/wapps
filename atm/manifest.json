@@ -1,0 +1,27 @@
+{
+  "id":              "tools.xprs.atm",
+  "version":         "0.2.1",
+  "kind":            "app",
+  "title":           "ATM",
+  "description":     "Operate a coin: run its blockchain and distribute it.",
+  "summary":         "Turn this device into an ATM — a trusted node for a participation coin. Create a coin with its own keyset, assignment rules and blockchain database; distribute assigned coins to participants as a faucet (recorded on the coin's ledger); designate other npubs as trusted ATMs; and share the coin so wallets can hold it. One ATM can run several coins, each with its own rules and ledger.",
+  "icon":            "media/icons/atm.svg",
+  "tags":            ["coin", "atm", "blockchain", "faucet", "issuer"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 60000,
+  "permissions":     [],
+  "platforms":       ["linux", "windows", "macos", "android"],
+  "hardware":        ["N/A", "intel", "arm"],
+  "provides": {
+    "functions":       [],
+    "events":          [],
+    "variables":       [],
+    "functionalities": []
+  },
+  "requires": {
+    "hal":       ["log", "msg", "kv"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.torrents",
+  "wapp_version": "0.6.2",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "c9d5f4d1efc6302fd22ceacccb9f217292c0e5c655d7301a57077d158a1e4288",
+  "hashes": {
+    "DESIGN.md": "1af4dbfdc012417965b0d22034de50a20bdf916e585ff39235e90ab03cb00631",
+    "Makefile": "6d5be150f80084e3b215bd6287ae05aec153f6788e10eb0e88fa9aa3af14ada4",
+    "app.wasm": "b9a95aa03c1b4a16a5944ff23250e33aeb330b1c55e76bfc83ed0ace592495a2",
+    "main.c": "4b9727ec9c80d0101b27a5e24e1451b45fd4610eeeb2fd6e52eac33744bef801",
+    "manifest.json": "83b827a0ab355900cab262e6fd048938c8c351b38a3e1aa4e1705615be8d74c9",
+    "media/icons/torrents.svg": "28a342bf59d941de0606e401a37c0bc97bbe71c6daa57a585775f90fedf9afe3",
+    "screens/home.ui.json": "f0da83fe9783b7f1517a1892a6b31b5cb1bc104b5f97282c39962bb715e557d6"
+  },
+  "event": {
+    "id": "fe9fda3038ee18c47b379e80ed665d7335ecc9ca8aa23a46b74c45d8cf0b5ae1",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.torrents"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.torrents"
+      ],
+      [
+        "wapp_version",
+        "0.6.2"
+      ],
+      [
+        "manifest_digest",
+        "c9d5f4d1efc6302fd22ceacccb9f217292c0e5c655d7301a57077d158a1e4288"
+      ]
+    ],
+    "content": "c9d5f4d1efc6302fd22ceacccb9f217292c0e5c655d7301a57077d158a1e4288",
+    "sig": "37d8914946214c1153e7e4f6886186cbb06c5f906a3aa5fd544e2721516eb226bbf91a83cb24fd542329f94d56ebb317f606dc138ecdd3e74148b4b527a8edf7"
+  }
+}

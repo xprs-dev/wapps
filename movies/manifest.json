@@ -1,0 +1,39 @@
+{
+  "id":              "tools.xprs.movies",
+  "version":         "0.1.3",
+  "kind":            "app",
+  "title":           "Movies",
+  "description":     "Local video player with optional subtitle support.",
+  "summary":         "Play local video files (mp4, mkv, webm, mov, avi…) with optional SRT subtitle support. Hands playback to the host's media_kit engine.",
+  "icon":            "media/icons/movies.svg",
+  "tags":            ["video", "movie", "media", "player"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 0,
+  "permissions":     ["storage"],
+  "platforms":       ["linux", "windows", "macos", "android", "ios"],
+  "hardware":        ["intel", "arm"],
+  "provides": {
+    "functionalities": [],
+    "file_handlers": [
+      {
+        "extensions": ["mp4", "m4v", "mkv", "webm", "mov", "avi", "flv", "wmv", "mpeg", "mpg", "ogv", "ts", "mts", "m2ts", "3gp"],
+        "mime":       ["video/*"],
+        "title":      "Play",
+        "modes":      ["view"]
+      },
+      {
+        "extensions": ["srt", "vtt", "ass", "ssa", "sub"],
+        "mime":       ["application/x-subrip", "text/vtt"],
+        "title":      "Open subtitle",
+        "modes":      ["view"]
+      }
+    ]
+  },
+  "requires": {
+    "hal":            ["log", "kv", "msg"],
+    "functionalities": ["media.video"],
+    "events":         [],
+    "libraries":      [],
+    "variables":      []
+  }
+}

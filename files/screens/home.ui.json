@@ -1,0 +1,62 @@
+[
+  {
+    "$": "screen",
+    "name": "Folders",
+    "icon": "folder_shared",
+    "tip": "Folders you share, served straight from disk. Each has a permanent id (its key); contents can change but the id stays. Others browse it by id and get the same folder structure. Tap a folder to open it, then tap subfolders to navigate.",
+    "children": [
+      { "$": "action", "name": "folder_add_disk", "label": "Share a disk folder", "icon": "folder_shared", "style": "primary", "tip": "Pick a directory on this device to share; files are served from disk (not copied), keeping their folder structure. The master key is kept inside that folder." },
+      { "$": "action", "name": "folder_new", "label": "New folder", "icon": "create_new_folder", "style": "secondary", "tip": "Create an empty folder you own (you hold its master key)." },
+      { "$": "action", "name": "folder_open_id", "label": "Open by id", "icon": "search", "style": "secondary", "tip": "Browse any folder by its id (hex) or npub address." },
+      { "$": "action", "name": "folder_back", "label": "My folders", "icon": "list", "style": "secondary", "tip": "Back to the list of folders you share." },
+      { "$": "action", "name": "folder_manage", "label": "Manage", "icon": "settings", "style": "secondary", "tip": "Download all, auto-sync, and owner edits (rename, link, admins, rescan)." },
+      { "$": "field", "name": "folders", "$type": "people", "tip": "Your folders, or — when one is open — its subfolders and files. Tap a subfolder to go in, or \"..\" to go up." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Info",
+    "menu": true,
+    "icon": "info",
+    "tip": "The open folder's share link, plus how often its files have been shared and how recently.",
+    "children": [
+      { "$": "action", "name": "copy_key", "label": "Copy link", "icon": "link", "style": "primary", "tip": "Show and copy this folder's share link (npub) so others can open it." },
+      { "$": "action", "name": "copy_id", "label": "Copy id (hex)", "icon": "content_copy", "style": "secondary", "tip": "Copy the raw hex folder id." },
+      { "$": "field", "name": "info_log", "$type": "log", "label": "Folder info & statistics", "tip": "Share link, file count and size, and serve counts over time." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Edit",
+    "menu": true,
+    "icon": "edit",
+    "tip": "Edit the open (or selected) folder's metadata. Reached from a folder's ... menu.",
+    "children": [
+      { "$": "field", "name": "edit_name", "$type": "string", "label": "Name", "max": 100, "hint": "folder name", "tip": "Up to 100 characters." },
+      { "$": "field", "name": "edit_desc", "$type": "string", "label": "Description", "max": 250, "multiline": true, "lines": 4, "hint": "what's in this folder", "tip": "Up to 250 characters." },
+      { "$": "field", "name": "edit_tags", "$type": "string", "label": "Tags", "max": 50, "hint": "e.g. music, live, 2024", "tip": "Comma or space separated; 50 characters total." },
+      { "$": "action", "name": "folder_save", "label": "Save", "icon": "save", "style": "primary", "tip": "Sign and publish the new metadata." }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Sharing",
+    "menu": true,
+    "tip": "Make your folders available to others.",
+    "children": [
+      {
+        "$": "group",
+        "name": "provide",
+        "tip": "Two transports: Blossom HTTP for devices on the same local network, and BitTorrent for anyone across the internet.",
+        "children": [
+          { "$": "field", "name": "blossom_on", "$type": "bool", "label": "Share on the local network (Blossom)", "default": true, "tip": "Serve GET /<sha256> over HTTP so nearby devices can scan this port and fetch your files. NOSTR-Blossom compatible." },
+          { "$": "field", "name": "blossom_port", "$type": "string", "label": "HTTP port", "default": "3457" },
+          { "$": "field", "name": "uploads_on", "$type": "bool", "label": "Accept uploads (PUT /upload)", "default": false, "tip": "Allow others to store files on this device. Uploads are keyed by their own hash, so nobody can overwrite an existing file." },
+          { "$": "field", "name": "seed_on", "$type": "bool", "label": "Seed over BitTorrent (internet)", "default": true, "tip": "Create a deterministic torrent for every archived file and announce it to well-known public trackers + the DHT, so devices on other networks can fetch it from the swarm via its magnet link." },
+          { "$": "action", "name": "share_apply", "label": "Apply sharing", "style": "primary", "tip": "Start/stop the transports with the settings above." }
+        ]
+      },
+      { "$": "field", "name": "share_log", "$type": "log", "label": "Status", "tip": "Server and swarm activity." }
+    ]
+  }
+]

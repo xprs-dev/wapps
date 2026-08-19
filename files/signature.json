@@ -1,0 +1,49 @@
+{
+  "schema": "xprs.wapp.signature/1",
+  "wapp_id": "tools.xprs.files",
+  "wapp_version": "0.9.3",
+  "signed_at": 1787085166,
+  "publisher_npub": "npub16jk8434t93q0qw0pcgkpfzqcq2rfpl0rvzjd3wywuunh43cwpv5shdp5k2",
+  "publisher_hex": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+  "hash_algo": "sha256",
+  "manifest_digest_hex": "175888a8e03bde93758ce5528df24918c940c313bf3bc928830dbdfbf1fadbaa",
+  "hashes": {
+    "DESIGN.md": "3bffe02a8c4103dad810af448f176706f765f1a7050909797869be9d81528b7a",
+    "Makefile": "6d5be150f80084e3b215bd6287ae05aec153f6788e10eb0e88fa9aa3af14ada4",
+    "app.wasm": "12a9491f2fd1b6efae271187f2e8007c5f1bef0542ea8248b97f3a5e25b022e5",
+    "main.c": "b68846a0d5f5b19c72dc2d47eac6a0c3bf28b381efae283b21c4f6b3dc2e6fe7",
+    "manifest.json": "7795ffe587645076896a53060569983899903334f3c05ab7dcc50a02fb2194aa",
+    "media/icons/files.svg": "f9d3a47c479cda4c0b4fff39d2bc65bb9aa58152aceac6d723e9ffb619559546",
+    "screens/home.ui.json": "fabd0e716fc474671c18373c757beebf14805e75ef8d24becfe33c9a5b99b854"
+  },
+  "event": {
+    "id": "b2975c621b71b124fc8eccaab82de49c4e35fad75fec8331c04c3f489e6fa623",
+    "pubkey": "d4ac7ac6ab2c40f039e1c22c148818028690fde360a4d8b88ee7277ac70e0b29",
+    "created_at": 1787085166,
+    "kind": 30078,
+    "tags": [
+      [
+        "d",
+        "xprs.wapp:tools.xprs.files"
+      ],
+      [
+        "t",
+        "xprs-wapp-signature"
+      ],
+      [
+        "wapp_id",
+        "tools.xprs.files"
+      ],
+      [
+        "wapp_version",
+        "0.9.3"
+      ],
+      [
+        "manifest_digest",
+        "175888a8e03bde93758ce5528df24918c940c313bf3bc928830dbdfbf1fadbaa"
+      ]
+    ],
+    "content": "175888a8e03bde93758ce5528df24918c940c313bf3bc928830dbdfbf1fadbaa",
+    "sig": "a210fa0fae01d014cd883721deef899959b19bb3300a2421c87453e354edd01a9e85afe51b82c57bc94de5e9a0389709c2585966a47a255f14a45cee6fd1cff0"
+  }
+}

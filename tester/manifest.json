@@ -1,0 +1,24 @@
+{
+  "id":              "tools.xprs.tester",
+  "version":         "1.0.2",
+  "kind":            "system",
+  "title":           "Tester",
+  "description":     "Notification test harness for the host services.",
+  "summary":         "End-user test harness for XPRS host services. Fire notifications of every flavour to verify stacking, levels, bodies, and system-tray routing.",
+  "icon":            "media/icons/tester.svg",
+  "tags":            ["system", "tools", "debug", "tester"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 5000,
+  "permissions":     [],
+  "provides": {
+    "functions": [],
+    "events":    [],
+    "variables": []
+  },
+  "requires": {
+    "hal":       ["log", "msg"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

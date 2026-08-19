@@ -1,0 +1,10 @@
+{
+  "screen.store": "Store",
+  "screen.store_tip": "Browse and install wapps shared over Reticulum.",
+  "screen.settings": "Settings",
+  "screen.settings_tip": "Manage the repositories the wapp store downloads from.",
+  "screen.sources": "Repositories",
+  "group.output_tip": "Wapp catalog and status messages.",
+  "group.sources_name": "Sources",
+  "group.sources_tip": "Add a repository: a Reticulum folder key (npub… or rns:npub…) or a URL. The store fetches only its index of available wapps; you choose what to install."
+}

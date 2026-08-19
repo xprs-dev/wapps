@@ -1,0 +1,28 @@
+{
+  "id":              "tools.xprs.indexer",
+  "version":         "0.6.3",
+  "kind":            "app",
+  "title":           "Indexer",
+  "description":     "Indexer - volunteer this device to answer 'where can I find npub X'. It hands out addresses, never other people's posts.",
+  "summary":         "An indexer is a phone book, not a library: it remembers WHERE things are and stores no one else's content, so an indexer that vanishes costs the network a directory rather than an archive. Volunteer the device (off / when plugged in / always), see exactly what it is doing for the network — pointers held, authors it is a home for, indexers it syncs with, dead pointers pruned — and revoke it as easily as you granted it.",
+  "icon":            "media/icons/indexer.svg",
+  "color":           "#00897B",
+  "tags":            ["indexer", "nostr", "reticulum", "network", "dht"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 5000,
+  "permissions":     [],
+  "platforms":       ["linux", "windows", "macos", "android"],
+  "hardware":        ["N/A", "intel", "arm"],
+  "provides": {
+    "functions":       [],
+    "events":          [],
+    "variables":       [],
+    "functionalities": []
+  },
+  "requires": {
+    "hal":       ["log", "msg", "kv", "node"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

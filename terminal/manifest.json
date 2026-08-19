@@ -1,0 +1,24 @@
+{
+  "id":              "tools.xprs.terminal",
+  "version":         "1.0.2",
+  "kind":            "app",
+  "title":           "Terminal",
+  "description":     "Sandboxed terminal with built-in commands.",
+  "summary":         "File browser, text tools, network utilities, and system info.\nNo external shell needed — all commands run inside the WASM sandbox via HAL.",
+  "icon":            "media/icons/terminal.svg",
+  "tags":            ["tools", "terminal", "shell", "system"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 500,
+  "permissions":     ["storage", "network"],
+  "provides": {
+    "functions": [],
+    "events":    ["command.output"],
+    "variables": ["cwd"]
+  },
+  "requires": {
+    "hal":       ["log", "kv", "file", "http", "msg", "platform"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}

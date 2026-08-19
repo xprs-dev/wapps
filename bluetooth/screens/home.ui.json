@@ -1,0 +1,16 @@
+[
+  {
+    "$": "screen",
+    "name": "Bluetooth",
+    "icon": "bluetooth",
+    "tip": "Devices within reach of the BLE street mesh",
+    "children": [
+      {
+        "$": "field",
+        "name": "devices",
+        "$type": "people",
+        "tip": "Direct neighbors heard over route beacons, and destinations reachable multi-hop."
+      }
+    ]
+  }
+]

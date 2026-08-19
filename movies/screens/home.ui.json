@@ -1,0 +1,42 @@
+[
+  {
+    "$": "screen",
+    "name": "Player",
+    "tip": "Local video playback (handled by the host's media engine).",
+    "children": [
+      {
+        "$": "group",
+        "$type": "header-actions",
+        "children": [
+          {
+            "$": "group",
+            "$type": "menu",
+            "icon": "menu",
+            "tip": "More",
+            "children": [
+              {
+                "$": "action",
+                "name": "pick_video",
+                "label": "Open file…",
+                "tip": "Pick a local video to play."
+              },
+              {
+                "$": "action",
+                "name": "pick_subtitle",
+                "label": "Subtitle…",
+                "tip": "Attach an SRT/VTT subtitle file to the current video."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "$": "group",
+        "name": "video-surface",
+        "$type": "video",
+        "controls": "embedded",
+        "fit": "contain"
+      }
+    ]
+  }
+]

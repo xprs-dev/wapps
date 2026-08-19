@@ -1,0 +1,57 @@
+{
+  "id": "tools.xprs.chat",
+  "version": "0.4.46",
+  "kind": "app",
+  "title": "Chat",
+  "description": "Chat - encrypted messaging, live map and beacons over Reticulum, Bluetooth mesh and NOSTR relays (legacy APRS-IS optional).",
+  "summary": "A messaging station with Reticulum as the primary transport: encrypted 1:1 and group messages ride the RNS network (with NOSTR-relay store-and-forward backup) and short-range Bluetooth broadcast, no licence needed. A messenger panel shows text messages addressed to you, a live map pinpoints stations and messages, and a beacon composer crafts position / status / emergency / timed beacons. Legacy APRS-IS access is opt-in only and requires a government-issued amateur-radio callsign with its verified passcode.",
+  "icon": "media/icons/chat.svg",
+  "color": "#B71C1C",
+  "tags": [
+    "chat",
+    "messaging",
+    "map",
+    "reticulum",
+    "mesh",
+    "nostr",
+    "aprs"
+  ],
+  "entry_ui": "screens/home.ui.json",
+  "tick_interval_ms": 1000,
+  "permissions": [],
+  "platforms": [
+    "linux",
+    "windows",
+    "macos"
+  ],
+  "hardware": [
+    "N/A",
+    "intel",
+    "arm"
+  ],
+  "provides": {
+    "functions": [],
+    "events": [],
+    "variables": [],
+    "functionalities": [],
+    "intents": [
+      "chat"
+    ]
+  },
+  "requires": {
+    "hal": [
+      "log",
+      "msg",
+      "rns",
+      "kv",
+      "time",
+      "socket",
+      "nostr",
+      "sqlite",
+      "crypto"
+    ],
+    "events": [],
+    "libraries": [],
+    "variables": []
+  }
+}

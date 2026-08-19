@@ -1,0 +1,25 @@
+{
+  "id":              "tools.xprs.torrents",
+  "version":         "0.6.2",
+  "kind":            "app",
+  "title":           "Torrents",
+  "description":     "Folder torrents over Reticulum - create, share, download and seed.",
+  "summary":         "A torrent client whose unit of sharing is a folder, not a file. A torrent's address is a key (ntorrent1...), so its contents can change without the link ever changing. Create one from a folder on disk, share the link, and let others download it. Pin a torrent to keep a full copy and advertise yourself to the Indexers as a holder - the swarm then stops waking the publisher's phone. Seeds in the background, so a pinned folder keeps serving while the app is suspended.",
+  "icon":            "media/icons/torrents.svg",
+  "tags":            ["torrents", "share", "folders", "reticulum", "seed"],
+  "entry_ui":        "screens/home.ui.json",
+  "tick_interval_ms": 1000,
+  "permissions":     ["network", "storage"],
+  "platforms":       ["linux", "windows", "macos", "android"],
+  "provides": {
+    "functions": [],
+    "events":    [],
+    "variables": []
+  },
+  "requires": {
+    "hal":       ["log", "kv", "msg"],
+    "events":    [],
+    "libraries": [],
+    "variables": []
+  }
+}
