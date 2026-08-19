@@ -1415,6 +1415,12 @@ __attribute__((import_module("hal"), import_name("xprs_status")))
 int32_t hal_xprs_status(const char *text, uint32_t text_len,
                         const char *mood, uint32_t mood_len);
 
+/* Air one caller-composed XPRS wire. The host validates section 4 syntax,
+ * signs it when it speaks as this station and carries no sig:, applies the
+ * scope rules (13.11) and spools its own copy. 0 queued, -1 invalid. */
+__attribute__((import_module("hal"), import_name("xprs_send")))
+int32_t hal_xprs_send(const char *wire, uint32_t wire_len);
+
 /* The persistent spool of heard XPRS packets (section 24 serve:history) —
  * everything this station archived, past the traffic ring's 200 entries and
  * across restarts. [query] is a JSON filter, "{}" for the latest:

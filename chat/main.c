@@ -1101,6 +1101,29 @@ static int within_radius(const char *call) {
  * when a contact's position arrives. */
 static char g_convo_ids[32][40];
 static int g_convo_n = 0;
+
+/* ── The scope rooms (XPRS 13.11): #LOCAL and #GLOBAL ─────────────────────
+ * Two built-in conversations carried as plain t:message broadcasts through
+ * the host's XPRS lane -- the same wires the ESP32 hotspot chat and every
+ * other station speak, so writing here is writing there. #LOCAL sends carry
+ * scope:local (short-range bearers only, never gated to the internet);
+ * #GLOBAL is the unmarked default that goes anywhere. Receive is a poll of
+ * the host's archive (hal_xprs_history), deduplicated by row id. */
+#define XROOM_LOCAL  "#LOCAL"
+#define XROOM_GLOBAL "#GLOBAL"
+static int xroom_is(const char *id) {
+  return s_eq(id, XROOM_LOCAL) || s_eq(id, XROOM_GLOBAL);
+}
+static char g_xroom_seen[64][12];
+static int  g_xroom_seen_n;
+static int xroom_seen(const char *mid) {
+  if (!mid[0]) return 1;
+  for (int i = 0; i < 64; i++) if (s_eq(g_xroom_seen[i], mid)) return 1;
+  s_cpy(g_xroom_seen[g_xroom_seen_n % 64], mid, 12);
+  g_xroom_seen_n++;
+  return 0;
+}
+
 static void convo_remember(const char *id) {
   for (int i = 0; i < g_convo_n; i++) if (s_eq(g_convo_ids[i], id)) return;
   if (g_convo_n < 32) s_cpy(g_convo_ids[g_convo_n++], id, 40);
@@ -2957,6 +2980,26 @@ static void convo_send_core(const char *buf, const char *id_in,
   s_cpy(id, id_in, sizeof(id));
   s_cpy(text, text_in, sizeof(text));
   if (!id[0] || !text[0]) return;
+  /* The scope rooms speak raw XPRS through the host: one t:message
+   * broadcast, scope:local for #LOCAL, signed and aired by hal_xprs_send.
+   * Everyone on the bearers -- the ESP32 hotspot page included -- hears it. */
+  if (xroom_is(id)) {
+    char ts[24];
+    xprs_stamp(ts, sizeof(ts), hal_time_epoch());
+    char wire[300] = "t:message f:";
+    s_cat(wire, g_call, sizeof(wire));
+    s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
+    if (s_eq(id, XROOM_LOCAL)) s_cat(wire, " scope:local", sizeof(wire));
+    s_cat(wire, " m:", sizeof(wire)); s_cat(wire, text, sizeof(wire));
+    if (s_len(wire) > 250) { notify("warning", "Message too long"); return; }
+    if (hal_xprs_send(wire, s_len(wire)) != 0) {
+      notify("warning", "Could not send");
+      return;
+    }
+    convo_msg(id, "out", g_call, text, "", "", 0, 0, "XPRS",
+              "", "", "verified", 0, 0);
+    return;
+  }
   /* A room message is a NIP-72 community post (kind-1 tagged to the room); it
    * does not ride APRS/BLE/encryption. Post it and echo locally. */
   if (room_is_room(id)) {
@@ -7256,6 +7299,8 @@ void module_init(void) {
   pk_load();       /* restore known callsign -> pubkey map (for verification) */
   rns_dest_load(); /* restore npub -> {RNS delivery dests} (Reticulum addressing) */
   cpriv_load();    /* restore which 1:1 conversations are private (Reticulum-only) */
+  convo_ensure(XROOM_LOCAL);   /* the scope rooms exist before the first word */
+  convo_ensure(XROOM_GLOBAL);
   /* Sweep out callsign-keyed ghost rows written by older builds: every id we
    * hold as a bare callsign is, by definition, not something this wapp can
    * render. Cheap, idempotent, and it heals a store the user is looking at. */
@@ -7384,6 +7429,60 @@ void module_tick(void) {
         lxname_resolve(id + 5);
         name_next = (k + 1) % g_convo_n;
         break;                                          /* one per sweep */
+      }
+    }
+  }
+
+  /* The scope rooms: poll the host's archive for t:message broadcasts and
+   * deliver the new ones into #LOCAL / #GLOBAL. Every four seconds, one
+   * bounded read -- the archive query is an indexed table on the host. */
+  {
+    static unsigned xroom_tick = 0;
+    if ((++xroom_tick % 4) == 0) {
+      static char rows[8192];
+      static const char XQ[] = "{\"limit\":12}";
+      int n = hal_xprs_history(XQ, s_len(XQ), rows, sizeof(rows) - 1);
+      if (n > 0 && n < (int)sizeof(rows)) {
+        rows[n] = 0;
+        /* Walk the JSON array object by object, quote-aware. */
+        int depth = 0, instr = 0, esc = 0, start = -1;
+        for (int i = 0; rows[i]; i++) {
+          char ch = rows[i];
+          if (esc) { esc = 0; continue; }
+          if (ch == '\\') { esc = 1; continue; }
+          if (ch == '"') { instr = !instr; continue; }
+          if (instr) continue;
+          if (ch == '{') { if (depth == 0) start = i; depth++; }
+          else if (ch == '}') {
+            depth--;
+            if (depth == 0 && start >= 0) {
+              char save = rows[i + 1];
+              rows[i + 1] = 0;
+              const char *obj = rows + start;
+              char typ[16], to[16], from[16], wire[300], mid[12], sig[12];
+              jstr(obj, "type", typ, sizeof(typ));
+              if (s_eq(typ, "message")) {
+                to[0] = 0; jstr(obj, "to", to, sizeof(to));
+                jstr(obj, "from", from, sizeof(from));
+                jstr(obj, "wire", wire, sizeof(wire));
+                jstr(obj, "id", mid, sizeof(mid));
+                sig[0] = 0; jstr(obj, "sig", sig, sizeof(sig));
+                int own = jbool_def(obj, "own", 0);
+                const char *m = s_find(wire, " m:");
+                if (!to[0] && m && from[0] && !own && !xroom_seen(mid) &&
+                    !s_eq(from, g_call)) {
+                  const char *room = s_find(wire, " scope:local")
+                                         ? XROOM_LOCAL : XROOM_GLOBAL;
+                  convo_msg(room, "in", from, m + 3, "", "", 0, 0, "XPRS",
+                            mid, "", s_eq(sig, "verified") ? "verified" : "",
+                            0, 0);
+                }
+              }
+              rows[i + 1] = save;
+              start = -1;
+            }
+          }
+        }
       }
     }
   }
