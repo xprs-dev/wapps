@@ -14,9 +14,10 @@
  *
  * Two consequences worth stating, because they are design and not omission:
  *
- *  - A status carries no like, no repost and no reply. XPRS section 27 has no
- *    such packet, so those commands are answered with a note in the log rather
- *    than pretending to work.
+ *  - A like is a t:reaction (section 6.5) and a reply is a status carrying
+ *    r: (section 27) — both real packets, aired here. A repost has no XPRS
+ *    packet, so that command is answered with a note in the log rather than
+ *    pretending to work.
  *  - Identity is a callsign, not an npub. A callsign is a label (section 3),
  *    so the `sig` the archive verified travels with every post and the feed
  *    says which ones are signed.
@@ -196,6 +197,84 @@ static void mark_seen(const char *id) {
     g_nseen++;
 }
 
+/* ── Speaking on the air ─────────────────────────────────────────────────
+ * Likes and replies go OUT from here: a like is a t:reaction (section 6.5)
+ * naming the status's section-5 id, a reply is itself a t:status carrying
+ * r: (section 27). The core signs and picks the bearers; the archive is the
+ * core's too — this wapp only composes words. */
+static char g_call[CALL_MAX] = "";
+static const char *my_call(void) {
+    if (!g_call[0]) {
+        unsigned n = hal_identity(g_call, sizeof(g_call) - 1);
+        if (n >= sizeof(g_call)) n = sizeof(g_call) - 1;
+        g_call[n] = '\0';
+        for (int i = 0; g_call[i]; i++) g_call[i] = uc(g_call[i]);
+    }
+    return g_call;
+}
+
+/* Epoch -> "YYYY-MM-DD_hh:mm:ss" UTC (section 4.8). Same civil-date
+ * arithmetic the chat wapp uses; exact for any date this will ever stamp. */
+static void two(char *d, int v) { d[0] = (char)('0' + (v / 10) % 10); d[1] = (char)('0' + v % 10); }
+static void stamp_now(char *out, unsigned cap) {
+    if (cap < 20) { out[0] = '\0'; return; }
+    unsigned long long e = hal_time_epoch();
+    long z = (long)(e / 86400ULL);
+    unsigned s = (unsigned)(e % 86400ULL);
+    z += 719468;
+    long era = (z >= 0 ? z : z - 146096) / 146097;
+    unsigned long doe = (unsigned long)(z - era * 146097);
+    unsigned long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    long yy = (long)yoe + era * 400;
+    unsigned long doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    unsigned long mp = (5 * doy + 2) / 153;
+    unsigned long dd = doy - (153 * mp + 2) / 5 + 1;
+    unsigned long mm = mp < 10 ? mp + 3 : mp - 9;
+    int y = (int)(yy + (mm <= 2 ? 1 : 0));
+    out[0] = (char)('0' + (y / 1000) % 10);
+    out[1] = (char)('0' + (y / 100) % 10);
+    out[2] = (char)('0' + (y / 10) % 10);
+    out[3] = (char)('0' + y % 10);
+    out[4] = '-'; two(out + 5, (int)mm);
+    out[7] = '-'; two(out + 8, (int)dd);
+    out[10] = '_'; two(out + 11, (int)(s / 3600));
+    out[13] = ':'; two(out + 14, (int)((s / 60) % 60));
+    out[16] = ':'; two(out + 17, (int)(s % 60));
+    out[19] = '\0';
+}
+
+/* A JSON string value out of json_raw still carries its escapes; a wire is
+ * one plain line, so undo them (and flatten whatever control characters an
+ * input box smuggled in into spaces). */
+static void unescape(char *s) {
+    unsigned o = 0;
+    for (unsigned i = 0; s[i]; i++) {
+        char c = s[i];
+        if (c == '\\' && s[i + 1]) {
+            char n = s[++i];
+            c = n == 'n' || n == 't' || n == 'r' ? ' ' : n;
+        }
+        if ((unsigned char)c < 32) c = ' ';
+        s[o++] = c;
+    }
+    s[o] = '\0';
+}
+
+/* Tell the host one like vote landed on one post: it tallies per liker in
+ * the core activity archive (idempotent), so replays cost nothing. */
+static void push_react(const char *mid, const char *from, int like, int mine) {
+    str_copy(g_msg, "{\"type\":\"ui.activity.react\",\"mid\":\"", sizeof(g_msg));
+    str_cat(g_msg, mid, sizeof(g_msg));
+    str_cat(g_msg, "\",\"from\":\"", sizeof(g_msg));
+    str_cat(g_msg, from, sizeof(g_msg));
+    str_cat(g_msg, "\",\"like\":", sizeof(g_msg));
+    str_cat(g_msg, like ? "true" : "false", sizeof(g_msg));
+    str_cat(g_msg, ",\"mine\":", sizeof(g_msg));
+    str_cat(g_msg, mine ? "true" : "false", sizeof(g_msg));
+    str_cat(g_msg, "}", sizeof(g_msg));
+    send_msg(g_msg);
+}
+
 /* ── Follows (callsigns, kept in host kv) ────────────────────────────── */
 #define FOLLOW_KEY "xprs.follow.calls"
 
@@ -260,8 +339,9 @@ static void follow_remove_call(const char *raw) {
 /* One post into a chat field. [body] is already JSON-escaped (it came out of
  * the archive's JSON and goes straight back into ours). */
 static void feed_append(const char *field, const char *from, const char *body,
-                        const char *mid, const char *ts, const char *sig,
-                        const char *bearer, int own, const char *source) {
+                        const char *mid, const char *parent, const char *ts,
+                        const char *sig, const char *bearer, int own,
+                        const char *source) {
     str_copy(g_msg, "{\"type\":\"ui.chat.append\",\"field\":\"", sizeof(g_msg));
     str_cat(g_msg, field, sizeof(g_msg));
     str_cat(g_msg, "\",\"message\":{\"dir\":\"", sizeof(g_msg));
@@ -274,8 +354,11 @@ static void feed_append(const char *field, const char *from, const char *body,
     str_cat(g_msg, body, sizeof(g_msg));           /* already escaped */
     str_cat(g_msg, "\",\"mid\":\"", sizeof(g_msg));
     str_cat(g_msg, mid, sizeof(g_msg));
-    /* A status is never a reply — section 27 has no parent. */
-    str_cat(g_msg, "\",\"parent\":\"\",\"pop\":0,\"source\":\"", sizeof(g_msg));
+    /* A reply to a status is itself a status carrying r: (section 27) — the
+     * parent is that id, and the host threads on it. */
+    str_cat(g_msg, "\",\"parent\":\"", sizeof(g_msg));
+    str_cat(g_msg, parent, sizeof(g_msg));
+    str_cat(g_msg, "\",\"pop\":0,\"source\":\"", sizeof(g_msg));
     str_cat(g_msg, source, sizeof(g_msg));
     str_cat(g_msg, "\"", sizeof(g_msg));
     /* Whether the archive could check the signature is part of the post: a
@@ -326,6 +409,25 @@ static void feed_from_spool(const char *field, const char *query,
     while (next_obj(g_hist, &pos, g_row, sizeof(g_row))) {
         char type[24] = "";
         json_raw(g_row, "type", type, sizeof(type));
+        /* A reaction (6.5) is a tally on a post, never a row of its own. */
+        if (str_eq(type, "reaction")) {
+            char rid[20] = "", rfrom[CALL_MAX] = "", rwire[300] = "";
+            json_raw(g_row, "id", rid, sizeof(rid));
+            json_raw(g_row, "from", rfrom, sizeof(rfrom));
+            json_raw(g_row, "wire", rwire, sizeof(rwire));
+            if (!rid[0] || !rfrom[0] || seen(rid)) continue;
+            char tgt[12] = "", act[12] = "";
+            wire_key(rwire, "r", tgt, sizeof(tgt));
+            int add = wire_key(rwire, "add", act, sizeof(act)) && str_eq(act, "like");
+            int rem = !add && wire_key(rwire, "remove", act, sizeof(act)) && str_eq(act, "like");
+            if (!tgt[0] || (!add && !rem)) continue;
+            mark_seen(rid);
+            char person[CALL_MAX]; unsigned o = 0;
+            for (const char *p = rfrom; *p && *p != '-' && o < sizeof(person) - 1; p++) person[o++] = uc(*p);
+            person[o] = '\0';
+            push_react(tgt, person, add, str_eq(person, my_call()));
+            continue;
+        }
         if (!str_eq(type, "status")) continue;
 
         char id[20] = "", from[CALL_MAX] = "", ts[24] = "", sig[16] = "",
@@ -350,6 +452,10 @@ static void feed_from_spool(const char *field, const char *query,
         if (!wire_body(wire, body, sizeof(body))) continue;
         if (match[0] && !contains_ci(body, match) && !contains_ci(person, match)) continue;
 
+        /* r: names the status this one replies to (section 27). */
+        char parent[12] = "";
+        wire_key(wire, "r", parent, sizeof(parent));
+
         /* Section 6.6: `n:i/k` means this is one piece of a longer status. */
         char nfield[12] = "";
         if (wire_key(wire, "n", nfield, sizeof(nfield)) && nfield[0]) {
@@ -365,14 +471,14 @@ static void feed_from_spool(const char *field, const char *query,
                 char whole[2200] = "";
                 for (int i = 0; i < g->total; i++) str_cat(whole, g->part[i], sizeof(whole));
                 mark_seen(id);
-                feed_append(field, person, whole, id, ts, sig, bearer, str_eq(own, "true"), source);
+                feed_append(field, person, whole, id, parent, ts, sig, bearer, str_eq(own, "true"), source);
                 continue;
             }
         }
 
         if (seen(id)) continue;
         mark_seen(id);
-        feed_append(field, person, body, id, ts, sig, bearer, str_eq(own, "true"), source);
+        feed_append(field, person, body, id, parent, ts, sig, bearer, str_eq(own, "true"), source);
     }
 }
 
@@ -423,7 +529,8 @@ int32_t module_tick(void) {
     /* The spool is a local sqlite read, but it is still a read: once every
      * few seconds is plenty for a feed whose source is a radio. */
     if (g_ticks % 4 == 0)
-        feed_from_spool("activity", "{\"limit\":60}", "");
+        feed_from_spool("activity",
+            "{\"limit\":60,\"types\":[\"status\",\"reaction\"]}", "");
     return 0;
 }
 
@@ -451,7 +558,8 @@ int32_t module_handle_event(void) {
          * we think it has already been shown and fill it from the spool. */
         g_nseen = 0;
         g_ngrp = 0;
-        feed_from_spool("activity", "{\"limit\":120}", "");
+        feed_from_spool("activity",
+            "{\"limit\":120,\"types\":[\"status\",\"reaction\"]}", "");
 
     /* `activity_send` is deliberately NOT handled here.
      *
@@ -475,7 +583,8 @@ int32_t module_handle_event(void) {
         json_raw(buf, "search_input", g_query, sizeof(g_query));
         clear_field("search_results");
         int keep = g_nseen; g_nseen = 0;   /* search has its own field */
-        feed_from_spool("search_results", "{\"limit\":200}", g_query);
+        feed_from_spool("search_results",
+            "{\"limit\":200,\"types\":[\"status\"]}", g_query);
         g_nseen = keep;
 
     } else if (str_eq(cmd, "follow_add")) {
@@ -502,12 +611,54 @@ int32_t module_handle_event(void) {
     } else if (str_eq(cmd, "follows_list")) {
         push_follows();
 
-    } else if (str_eq(cmd, "activity_like") || str_eq(cmd, "activity_repost") ||
-               str_eq(cmd, "activity_reply")) {
-        /* Section 27 has no like, repost or reply packet, so there is nothing
-         * honest to send. Say so rather than swallow it: a command that
-         * silently does nothing is the failure mode that costs a day. */
-        hal_log(4, "[social] no XPRS packet for like/repost/reply", 45);
+    } else if (str_eq(cmd, "activity_like")) {
+        /* A like on a post: t:reaction add:like r:<id> (6.5); retracting one
+         * is remove:like. The core signs it and picks the bearers; the vote
+         * also lands in the local tally NOW rather than after the spool
+         * round trip. */
+        char mid[20] = "", set[8] = "";
+        json_raw(buf, "activity_mid", mid, sizeof(mid));
+        json_raw(buf, "activity_set", set, sizeof(set));
+        if (mid[0] && my_call()[0]) {
+            int unlike = set[0] == '0';
+            char ts[24]; stamp_now(ts, sizeof(ts));
+            char wire[160];
+            str_copy(wire, "t:reaction f:", sizeof(wire));
+            str_cat(wire, my_call(), sizeof(wire));
+            str_cat(wire, " ts:", sizeof(wire)); str_cat(wire, ts, sizeof(wire));
+            str_cat(wire, unlike ? " remove:like r:" : " add:like r:", sizeof(wire));
+            str_cat(wire, mid, sizeof(wire));
+            if (hal_xprs_send(wire, str_len(wire)) == 0)
+                push_react(mid, my_call(), !unlike, 1);
+            else
+                hal_log(4, "[social] like refused by the core", 34);
+        }
+
+    } else if (str_eq(cmd, "activity_reply")) {
+        /* A reply is itself a status carrying r: (section 27). */
+        char mid[20] = "", text[400] = "";
+        json_raw(buf, "activity_target_mid", mid, sizeof(mid));
+        json_raw(buf, "activity_input", text, sizeof(text));
+        unescape(text);
+        if (mid[0] && text[0] && my_call()[0]) {
+            char ts[24]; stamp_now(ts, sizeof(ts));
+            char wire[600];
+            str_copy(wire, "t:status f:", sizeof(wire));
+            str_cat(wire, my_call(), sizeof(wire));
+            str_cat(wire, " ts:", sizeof(wire)); str_cat(wire, ts, sizeof(wire));
+            str_cat(wire, " r:", sizeof(wire)); str_cat(wire, mid, sizeof(wire));
+            str_cat(wire, " m:", sizeof(wire)); str_cat(wire, text, sizeof(wire));
+            if (str_len(wire) > 250)
+                hal_log(4, "[social] reply too long for one packet", 38);
+            else if (hal_xprs_send(wire, str_len(wire)) != 0)
+                hal_log(4, "[social] reply refused by the core", 34);
+            /* No local echo: the reply returns through the spool like any
+             * other status and threads onto its parent there. */
+        }
+
+    } else if (str_eq(cmd, "activity_repost")) {
+        /* Still honest: section 27 has no repost packet. */
+        hal_log(4, "[social] no XPRS packet for repost", 34);
     }
     return 0;
 }
