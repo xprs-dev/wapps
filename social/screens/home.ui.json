@@ -3,7 +3,7 @@
     "$": "screen",
     "name": "Activity",
     "icon": "home",
-    "tip": "Notes from the accounts you follow. Share an update below.",
+    "tip": "Statuses heard over the air. Share one below -- it goes out on every radio this device has.",
     "children": [
       {
         "$": "field",
@@ -23,33 +23,18 @@
   },
   {
     "$": "screen",
-    "name": "Notifications",
-    "icon": "bell",
-    "menu": true,
-    "appbar": true,
-    "tip": "Likes, upvotes, replies and reposts of your posts.",
-    "children": [
-      {
-        "$": "field",
-        "name": "notifications",
-        "$type": "chat"
-      }
-    ]
-  },
-  {
-    "$": "screen",
     "name": "Search",
     "icon": "search",
     "menu": true,
     "appbar": true,
-    "tip": "Find posts and people across your feed and the connected relays.",
+    "tip": "Search the statuses this station archived, by words or by callsign.",
     "children": [
       {
         "$": "field",
         "name": "search_input",
         "$type": "string",
         "label": "Search",
-        "hint": "Words, a name, or #topic",
+        "hint": "Words, or a callsign",
         "live": true
       },
       {
@@ -109,14 +94,6 @@
       },
       {
         "$": "field",
-        "name": "search_media",
-        "$type": "bool",
-        "label": "Only posts with media",
-        "default": false,
-        "apply": "search_media_changed"
-      },
-      {
-        "$": "field",
         "name": "search_results",
         "$type": "chat"
       }
@@ -127,47 +104,30 @@
     "name": "Following",
     "icon": "people",
     "menu": true,
-    "tip": "Accounts you follow appear in your Activity feed.",
+    "tip": "Callsigns you follow. The Following tab narrows the feed to them.",
     "children": [
       {
         "$": "action",
         "name": "follow_add",
-        "label": "Follow an npub",
+        "label": "Follow a callsign",
         "icon": "person_add",
         "style": "primary",
-        "tip": "Paste an npub or hex pubkey to follow — their notes appear in Activity."
+        "tip": "Type a callsign to follow -- their statuses appear under Following."
       },
       {
         "$": "field",
         "name": "follow_input",
         "$type": "string",
-        "label": "npub / hex pubkey",
-        "hint": "npub1…"
+        "label": "Callsign",
+        "hint": "X1ABCD"
       },
       {
         "$": "field",
         "name": "follows_list",
         "$type": "people",
-        "tip": "Accounts you follow. Tap a row to open its profile."
+        "tip": "Callsigns you follow. Tap a row to open it."
       }
     ],
     "toolbar": true
-  },
-  {
-    "$": "screen",
-    "name": "NOSTR on Internet",
-    "icon": "cloud",
-    "menu": true,
-    "tip": "Relays this device talks to, and the Blossom servers its media comes from.",
-    "children": [
-      {
-        "$": "field",
-        "name": "nostr_internet",
-        "$type": "string",
-        "label": "Internet",
-        "readonly": true,
-        "tip": "Managed by the host: relays + Blossom media servers."
-      }
-    ]
   }
 ]
