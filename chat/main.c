@@ -2986,18 +2986,66 @@ static void convo_send_core(const char *buf, const char *id_in,
   if (xroom_is(id)) {
     char ts[24];
     xprs_stamp(ts, sizeof(ts), hal_time_epoch());
+    /* The heart button rides the send path as "+like:<mid> <ck>". On the
+     * XPRS rooms a vote is a t:reaction (section 6.5) named by the target's
+     * section-5 id — never message text (that is what the webchat and the
+     * ESP32 page read; the "+like:" text form is chat-internal). */
+    {
+      char lmid[70]; int unlike; const char *ck;
+      if (votemark_parse(text, lmid, &unlike, &ck)) {
+        char wire[300] = "t:reaction f:";
+        s_cat(wire, g_call, sizeof(wire));
+        s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
+        if (s_eq(id, XROOM_LOCAL)) s_cat(wire, " scope:local", sizeof(wire));
+        s_cat(wire, unlike ? " remove:like" : " add:like", sizeof(wire));
+        s_cat(wire, " r:", sizeof(wire)); s_cat(wire, lmid, sizeof(wire));
+        if (hal_xprs_send(wire, s_len(wire)) != 0) {
+          notify("warning", "Could not send");
+          return;
+        }
+        convo_react_of(ck, id, lmid, g_call, unlike, 1);
+        return;
+      }
+    }
+    /* A reply arrives as "+<mid> text" (the host's thread marker). The mid of
+     * an XPRS room bubble is its section-5 id (6 hex); on the wire the target
+     * travels as r:, and the text goes out clean. */
+    char parent[8] = "";
+    if (text[0] == '+' && s_len(text) > 8 && text[7] == ' ') {
+      int hex = 1;
+      for (int i = 1; i <= 6; i++) {
+        char c = text[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) { hex = 0; break; }
+      }
+      if (hex) {
+        for (int i = 0; i < 6; i++) parent[i] = text[1 + i];
+        parent[6] = 0;
+        unsigned k = 0, n = 8;
+        while (text[n]) text[k++] = text[n++];
+        text[k] = 0;
+        if (!text[0]) return;
+      }
+    }
     char wire[300] = "t:message f:";
     s_cat(wire, g_call, sizeof(wire));
     s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
     if (s_eq(id, XROOM_LOCAL)) s_cat(wire, " scope:local", sizeof(wire));
+    if (parent[0]) { s_cat(wire, " r:", sizeof(wire)); s_cat(wire, parent, sizeof(wire)); }
     s_cat(wire, " m:", sizeof(wire)); s_cat(wire, text, sizeof(wire));
     if (s_len(wire) > 250) { notify("warning", "Message too long"); return; }
     if (hal_xprs_send(wire, s_len(wire)) != 0) {
       notify("warning", "Could not send");
       return;
     }
+    /* Our own bubble learns its section-5 id: the host signs AFTER us and the
+     * id is computed with sig: removed, so the bytes we just sent ARE the id
+     * input. Without this, a webchat like or reply naming our message would
+     * reach a bubble with no id and light nothing. */
+    char mid[7];
+    xprs_id(wire, s_len(wire), mid);
+    xroom_seen(mid);   /* the history poll replays it; not a new bubble */
     convo_msg(id, "out", g_call, text, "", "", 0, 0, "XPRS",
-              "", "", "verified", 0, 0);
+              mid, parent, "verified", 0, 0);
     return;
   }
   /* A room message is a NIP-72 community post (kind-1 tagged to the room); it
@@ -7440,7 +7488,10 @@ void module_tick(void) {
     static unsigned xroom_tick = 0;
     if ((++xroom_tick % 4) == 0) {
       static char rows[8192];
-      static const char XQ[] = "{\"limit\":12}";
+      /* Only the conversation types: observation/identity/service chatter
+       * outnumbers messages and would eat a 12-row window whole. */
+      static const char XQ[] =
+          "{\"limit\":12,\"types\":[\"message\",\"reaction\"]}";
       int n = hal_xprs_history(XQ, s_len(XQ), rows, sizeof(rows) - 1);
       if (n > 0 && n < (int)sizeof(rows)) {
         rows[n] = 0;
@@ -7473,9 +7524,41 @@ void module_tick(void) {
                     !s_eq(from, g_call)) {
                   const char *room = s_find(wire, " scope:local")
                                          ? XROOM_LOCAL : XROOM_GLOBAL;
+                  /* r: (before m:) is the reply target — a section-5 id the
+                   * bubble it names also carries, so the host can thread. */
+                  char parent[8] = "";
+                  const char *r = s_find(wire, " r:");
+                  if (r && r < m) {
+                    int k = 0;
+                    for (const char *p = r + 3; *p && *p != ' ' && k < 6; p++)
+                      parent[k++] = *p;
+                    parent[k] = 0;
+                  }
                   convo_msg(room, "in", from, m + 3, "", "", 0, 0, "XPRS",
-                            mid, "", s_eq(sig, "verified") ? "verified" : "",
+                            mid, parent,
+                            s_eq(sig, "verified") ? "verified" : "",
                             0, 0);
+                }
+              } else if (s_eq(typ, "reaction")) {
+                /* section 6.5: add:like / remove:like naming r:<id>. Tally on
+                 * the bubble; never a bubble of its own. */
+                jstr(obj, "from", from, sizeof(from));
+                jstr(obj, "wire", wire, sizeof(wire));
+                jstr(obj, "id", mid, sizeof(mid));
+                int own = jbool_def(obj, "own", 0);
+                if (from[0] && !own && !s_eq(from, g_call) &&
+                    !xroom_seen(mid)) {
+                  int remove = s_find(wire, " remove:like") != 0;
+                  const char *r = s_find(wire, " r:");
+                  if (r && (remove || s_find(wire, " add:like"))) {
+                    char tgt[8]; int k = 0;
+                    for (const char *p = r + 3; *p && *p != ' ' && k < 6; p++)
+                      tgt[k++] = *p;
+                    tgt[k] = 0;
+                    const char *room = s_find(wire, " scope:local")
+                                           ? XROOM_LOCAL : XROOM_GLOBAL;
+                    if (tgt[0]) convo_react_of("", room, tgt, from, remove, 0);
+                  }
                 }
               }
               rows[i + 1] = save;

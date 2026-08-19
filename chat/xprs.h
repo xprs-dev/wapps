@@ -49,4 +49,9 @@ unsigned long long xprs_parse_stamp(const char *s);
 /* Does an XPRS address name a station rather than a group (section 6.3)? */
 int xprs_is_station(const char *addr);
 
+/* Message identifier, XPRS section 5: first 6 lowercase hex characters of
+ * sha256 over [len] bytes of [wire]. The caller passes the wire WITHOUT
+ * sig:/via: (the wires this wapp builds never carry them). */
+void xprs_id(const char *wire, unsigned len, char out[7]);
+
 #endif
