@@ -1,23 +1,36 @@
 {
-  "id":              "tools.xprs.mesh",
-  "version":         "1.1.1",
-  "kind":            "app",
-  "title":           "Mesh",
-  "description":     "Visualize and manage the mesh: Reticulum and XPRS.",
-  "summary":         "An interactive map of the mesh as this node has observed it: Reticulum nodes, hubs and the links between them, and the XPRS stations heard over the air (Bluetooth, LAN, LoRa) with their signal, uptime and carried mail. Filters for the services a node provides and a highlight for peers running XPRS software. Manage the bootstrap hubs on the public internet and toggle relay (passive) mode. The view is observed-only — a sampled subset of the announces and beacons this node heard, never a hub's full client roster.",
-  "icon":            "media/icons/mesh.svg",
-  "tags":            ["mesh", "reticulum", "xprs", "network", "tools"],
-  "entry_ui":        "screens/home.ui.json",
+  "id": "tools.xprs.mesh",
+  "version": "1.1.2",
+  "kind": "app",
+  "title": "Mesh",
+  "description": "Visualize and manage the mesh: XPRS stations on the air, and the Reticulum gateways that carry them.",
+  "summary": "An interactive map of the mesh as this node has observed it: Reticulum nodes, hubs and the links between them, and the XPRS stations heard over the air (Bluetooth, LAN, LoRa) with their signal, uptime and carried mail. Filters for the services a node provides and a highlight for peers running XPRS software. Manage the bootstrap hubs on the public internet and toggle relay (passive) mode. The view is observed-only — a sampled subset of the announces and beacons this node heard, never a hub's full client roster.",
+  "icon": "media/icons/mesh.svg",
+  "tags": [
+    "mesh",
+    "reticulum",
+    "xprs",
+    "network",
+    "tools"
+  ],
+  "entry_ui": "screens/home.ui.json",
   "tick_interval_ms": 2000,
-  "permissions":     ["network"],
+  "permissions": [
+    "network"
+  ],
   "provides": {
     "functions": [],
-    "events":    [],
+    "events": [],
     "variables": []
   },
   "requires": {
-    "hal":       ["log", "kv", "msg", "rns"],
-    "events":    [],
+    "hal": [
+      "log",
+      "kv",
+      "msg",
+      "rns"
+    ],
+    "events": [],
     "libraries": [],
     "variables": []
   }

@@ -1,5 +1,6 @@
 /*
- * mesh — visualize and manage the mesh: Reticulum and XPRS.
+ * mesh — visualize and manage the mesh: XPRS stations, and the Reticulum
+ * gateways that carry them.
  *
  * Formerly the "reticulum" wapp. The graph the host renders now carries both
  * halves of the street: Reticulum nodes/hubs (from the observed announce
@@ -50,21 +51,44 @@ static void json_cat_escaped(char *d, const char *s, unsigned m) {
 }
 
 /* ── Filter state (page-driven, persisted) ───────────────────────────── */
-static int  g_xprs_only = 0;       /* show only xprs-software nodes  */
+/*
+ * XPRS-only by DEFAULT. The graph is for looking at the XPRS network, and a
+ * public Reticulum hub will happily flood a few hundred announces of nodes
+ * that have nothing to do with it -- the stations you care about end up as a
+ * handful of orbs in a cloud of strangers.
+ *
+ * Reticulum gateways are the exception and survive this filter: they are the
+ * structure the XPRS stations hang off, and hiding them would leave the
+ * stations floating with nothing to say how they are reached. The host emits
+ * hubs before the filter runs (rns_service graphSnapshot, pass 1), so this
+ * needs nothing here.
+ *
+ * The page's all/XPRS chip still switches it back for anyone who wants the
+ * whole street.
+ */
+static int  g_xprs_only = 1;       /* show only xprs nodes (+ hubs)  */
 static char g_service[32]  = "";      /* show only nodes with this service */
 static char g_search[64]   = "";      /* substring match on label/id/svc   */
 static int  g_ready = 0;              /* the page has loaded once          */
 
 static void load_state(void) {
     char buf[8];
-    if (hal_kv_get("geo", 3, buf, sizeof(buf) - 1) > 0) g_xprs_only = (buf[0] == '1');
+    /* Key renamed from "geo" deliberately. Every install that ever opened this
+     * wapp has "geo" saved as '0' from the old default, and reading it would
+     * restore that choice and quietly undo the new one -- the change would
+     * ship and nothing would look different. A new key has no stored value, so
+     * the default above applies once, and what the user picks afterwards
+     * sticks. */
+    if (hal_kv_get("xonly", 5, buf, sizeof(buf) - 1) > 0) {
+        g_xprs_only = (buf[0] == '1');
+    }
     hal_kv_get("svc", 3, g_service, sizeof(g_service) - 1);
     hal_kv_get("q", 1, g_search, sizeof(g_search) - 1);
 }
 
 static void save_state(void) {
     char b[2]; b[0] = g_xprs_only ? '1' : '0'; b[1] = '\0';
-    hal_kv_set("geo", 3, b, 1);
+    hal_kv_set("xonly", 5, b, 1);
     hal_kv_set("svc", 3, g_service, str_len(g_service));
     hal_kv_set("q", 1, g_search, str_len(g_search));
 }
