@@ -1114,12 +1114,16 @@ static int g_convo_n = 0;
 static int xroom_is(const char *id) {
   return s_eq(id, XROOM_LOCAL) || s_eq(id, XROOM_GLOBAL);
 }
-static char g_xroom_seen[64][12];
+/* The ring MUST stay larger than XROOM_LIMIT below: the poll re-walks the same
+ * window every four seconds, so a ring that cannot hold a whole window would
+ * forget the oldest row just in time to re-add it as a new bubble. */
+#define XROOM_SEEN 192
+static char g_xroom_seen[XROOM_SEEN][12];
 static int  g_xroom_seen_n;
 static int xroom_seen(const char *mid) {
   if (!mid[0]) return 1;
-  for (int i = 0; i < 64; i++) if (s_eq(g_xroom_seen[i], mid)) return 1;
-  s_cpy(g_xroom_seen[g_xroom_seen_n % 64], mid, 12);
+  for (int i = 0; i < XROOM_SEEN; i++) if (s_eq(g_xroom_seen[i], mid)) return 1;
+  s_cpy(g_xroom_seen[g_xroom_seen_n % XROOM_SEEN], mid, 12);
   g_xroom_seen_n++;
   return 0;
 }
@@ -7487,11 +7491,22 @@ void module_tick(void) {
   {
     static unsigned xroom_tick = 0;
     if ((++xroom_tick % 4) == 0) {
-      static char rows[8192];
+      /* 48 rows x ~360 B measured on a live archive = ~17 KB. The buffer must
+       * lead the window: hal_xprs_history returns a NEGATIVE length when the
+       * answer does not fit, this loop only runs for n > 0, and the room would
+       * then stop updating with no error anywhere. Change one, change both. */
+      static char rows[24576];
       /* Only the conversation types: observation/identity/service chatter
-       * outnumbers messages and would eat a 12-row window whole. */
+       * outnumbers messages and would eat the window whole.
+       *
+       * The window is deliberately much wider than a screenful. Rows come back
+       * newest-first by the packet's OWN timestamp, and a message replayed out
+       * of a station's archive carries the author's original ts -- which is old
+       * by definition. With the twelve rows this used to ask for, anything a
+       * station handed us was below the fold on any channel with recent
+       * traffic, so held mail was fetched, archived, and never displayed. */
       static const char XQ[] =
-          "{\"limit\":12,\"types\":[\"message\",\"reaction\"]}";
+          "{\"limit\":48,\"types\":[\"message\",\"reaction\"]}";
       int n = hal_xprs_history(XQ, s_len(XQ), rows, sizeof(rows) - 1);
       if (n > 0 && n < (int)sizeof(rows)) {
         rows[n] = 0;
@@ -7520,6 +7535,10 @@ void module_tick(void) {
                 sig[0] = 0; jstr(obj, "sig", sig, sizeof(sig));
                 int own = jbool_def(obj, "own", 0);
                 const char *m = s_find(wire, " m:");
+                /* Undirected traffic only. A message addressed to us (d:) is
+                 * delivered by the host into its own conversation through the
+                 * courier, whatever bearer carried it -- putting it in a room
+                 * as well would show it twice under two different names. */
                 if (!to[0] && m && from[0] && !own && !xroom_seen(mid) &&
                     !s_eq(from, g_call)) {
                   const char *room = s_find(wire, " scope:local")
