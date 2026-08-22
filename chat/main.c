@@ -227,13 +227,39 @@ static int is_autogen_call(const char *c) {
   return c[0] && up(c[0]) == 'X' && (c[1] == '1' || c[1] == '3');
 }
 
-/* Transport chip shown on messages: the internal token for APRS-IS-arrived
- * traffic is "NET" (compared all over the routing code); show it to the user
- * as "APRS-IS" so the origin is explicit; "RET" (Reticulum, the primary
- * transport) is spelled out. Other tags (BLE/RLY) pass through unchanged. */
+/* Transport chip shown on messages. Two vocabularies arrive here and both
+ * have to come out as something a person can read.
+ *
+ * The routing code's own tokens are uppercase and short, because they are
+ * compared all over it: "NET" (APRS-IS), "RET" (Reticulum), "BLE", "RLY",
+ * "LXM". The host's archive rows carry the OTHER vocabulary -- the bearer a
+ * packet was actually heard on, lowercase, from XprsMonitor.kBearers: ble,
+ * lan, espnow, lora, wifi, vhf, uhf, hf, plus rns and custody from the
+ * courier. Map both, in one place, because a chip is the only thing that
+ * tells the user whether a message walked in over Bluetooth or arrived off
+ * a station's archive over the LAN.
+ *
+ * Anything unrecognised passes through: a new bearer should show its own
+ * name rather than be silently relabelled as something it is not. */
 static const char *via_label(const char *via) {
-  if (via && via[0]=='N' && via[1]=='E' && via[2]=='T' && !via[3]) return "APRS-IS";
-  if (via && via[0]=='R' && via[1]=='E' && via[2]=='T' && !via[3]) return "Reticulum";
+  if (!via || !via[0]) return via;
+  /* routing tokens */
+  if (s_eq(via, "NET"))     return "APRS-IS";
+  if (s_eq(via, "RET"))     return "Reticulum";
+  /* bearers, as the host's archive spells them */
+  if (s_eq(via, "ble"))     return "BLE";
+  if (s_eq(via, "lan"))     return "LAN";
+  if (s_eq(via, "espnow"))  return "ESP-NOW";
+  if (s_eq(via, "lora"))    return "LoRa";
+  if (s_eq(via, "wifi"))    return "WiFi";
+  if (s_eq(via, "vhf"))     return "VHF";
+  if (s_eq(via, "uhf"))     return "UHF";
+  if (s_eq(via, "hf"))      return "HF";
+  if (s_eq(via, "rns"))     return "Reticulum";
+  /* Not a bearer: a packet handed over by a station that had been holding it
+   * for us. Where it travelled last is less interesting than the fact that
+   * nobody was in earshot when it was sent. */
+  if (s_eq(via, "custody")) return "Carried";
   return via;
 }
 static double g_lat = 0, g_lon = 0;
@@ -7526,6 +7552,7 @@ void module_tick(void) {
               rows[i + 1] = 0;
               const char *obj = rows + start;
               char typ[16], to[16], from[16], wire[300], mid[12], sig[12];
+              char bearer[12];
               jstr(obj, "type", typ, sizeof(typ));
               if (s_eq(typ, "message")) {
                 to[0] = 0; jstr(obj, "to", to, sizeof(to));
@@ -7533,6 +7560,13 @@ void module_tick(void) {
                 jstr(obj, "wire", wire, sizeof(wire));
                 jstr(obj, "id", mid, sizeof(mid));
                 sig[0] = 0; jstr(obj, "sig", sig, sizeof(sig));
+                /* How this one actually reached the device. Every row the
+                 * archive returns knows it, and until now all of them showed
+                 * the same "XPRS" chip -- which named the protocol, not the
+                 * path, and so said nothing: everything in this room is XPRS.
+                 * via_label turns the host's token into the name of the radio
+                 * or the network it came in on. */
+                bearer[0] = 0; jstr(obj, "bearer", bearer, sizeof(bearer));
                 int own = jbool_def(obj, "own", 0);
                 const char *m = s_find(wire, " m:");
                 /* Undirected traffic only. A message addressed to us (d:) is
@@ -7553,7 +7587,8 @@ void module_tick(void) {
                       parent[k++] = *p;
                     parent[k] = 0;
                   }
-                  convo_msg(room, "in", from, m + 3, "", "", 0, 0, "XPRS",
+                  convo_msg(room, "in", from, m + 3, "", "", 0, 0,
+                            bearer[0] ? bearer : "XPRS",
                             mid, parent,
                             s_eq(sig, "verified") ? "verified" : "",
                             0, 0);
