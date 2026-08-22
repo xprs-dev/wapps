@@ -10,12 +10,14 @@
  *              so a directory that vanishes costs the network a phone book
  *              rather than a library.
  *
- * They were separate wapps ("Archiver" and "Indexer") and that split asked the
- * owner to learn a distinction that only matters once they have already agreed
- * to help. Both answer the same question -- what is this device willing to do
- * for other people -- so they are answered in one place, with the two offers
- * still granted and revoked independently: enabling storage does not volunteer
- * the directory, and neither implies the other.
+ * These were once two wapps, and that split asked the owner to learn a
+ * distinction that only starts mattering after they have already agreed to
+ * help. Both answer the same question -- what is this device willing to do for
+ * other people -- so they are answered in one place, with the two offers still
+ * granted and revoked independently: enabling storage does not volunteer the
+ * directory, and neither implies the other. XPRS.md 36.0 settles the naming:
+ * on the air there is ONE role and one word for it, serve:archive, covering
+ * kept packets, held mail and the directory alike.
  *
  * Storage's two rules are the whole contract:
  *   - a device that never volunteered holds nothing for anybody (silence is not
@@ -219,7 +221,7 @@ static void push_dashboard(void) {
     set_field_raw("mirror", str_eq(mirror, "true") ? "true" : "false");
 }
 
-/* ── Directory: the pointer role, formerly the Indexer wapp ──────────────
+/* ── Directory: the pointer half of the archiver role (XPRS.md 36.9) ─────
  *
  * A dashboard first, because a role nobody can inspect is a role nobody
  * trusts: how often anyone actually asks (with the 48-hour shape, not just a
@@ -243,6 +245,8 @@ static void push_directory(void) {
     json_raw(g_status, "queriesLastHour", qLast, sizeof(qLast));
     json_raw(g_status, "queriesAvgPerHour", qAvg, sizeof(qAvg));
     json_raw(g_status, "querySpark", g_qSpark, sizeof(g_qSpark));
+    /* Host key, not a label: hal_node_status still spells this one the old
+     * way. What the tile below calls it is what the user reads. */
     json_raw(g_status, "indexersKnown", ixKnown, sizeof(ixKnown));
 
     str_copy(g_msg, "{\"type\":\"ui.stats.set\",\"field\":\"dir_dashboard\",\"tiles\":[",

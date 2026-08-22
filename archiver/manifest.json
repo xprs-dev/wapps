@@ -1,6 +1,6 @@
 {
   "id": "tools.xprs.archiver",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "kind": "app",
   "title": "Archiver",
   "description": "Archiver - hold other people's posts and files so they survive their device going offline, and answer 'where can I find npub X'.",
@@ -10,7 +10,7 @@
   "tags": [
     "archive",
     "storage",
-    "indexer",
+    "directory",
     "nostr",
     "reticulum",
     "hosting",
