@@ -88,7 +88,7 @@
     "$": "screen",
     "name": "Directory",
     "icon": "hub",
-    "tip": "An indexer tells the network which devices hold the posts and files of each npub. It stores addresses, never the content.",
+    "tip": "Tells the network which devices hold the posts and files of each npub. It stores addresses, never the content \u2014 a directory that goes offline costs the network a phone book, not a library.",
     "children": [
       {
         "$": "field",
