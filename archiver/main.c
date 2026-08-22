@@ -1,8 +1,23 @@
 /*
- * archiver — keep copies of other people's posts and files, so they survive the
- * device that made them going offline.
+ * archiver — hold other people's things so they survive the device that made
+ * them going offline, and tell the network where things are.
  *
- * Two rules are the whole contract:
+ * Two jobs, two screens, one wapp. They used to be two:
+ *
+ *   Storage    keeps COPIES. Costs disk, and giving it up loses content.
+ *   Directory  keeps POINTERS -- signed ~176-byte records saying which devices
+ *              hold a given npub's posts and files. Addresses, never content,
+ *              so a directory that vanishes costs the network a phone book
+ *              rather than a library.
+ *
+ * They were separate wapps ("Archiver" and "Indexer") and that split asked the
+ * owner to learn a distinction that only matters once they have already agreed
+ * to help. Both answer the same question -- what is this device willing to do
+ * for other people -- so they are answered in one place, with the two offers
+ * still granted and revoked independently: enabling storage does not volunteer
+ * the directory, and neither implies the other.
+ *
+ * Storage's two rules are the whole contract:
  *   - a device that never volunteered holds nothing for anybody (silence is not
  *     consent, so it starts disabled);
  *   - the limit is a CEILING, not a target. Full is full, and nothing of the
@@ -16,6 +31,8 @@
  *   hal_archive_status   → JSON: quota, used, items, served, freeable, switches
  *   hal_archive_drop     → run a cleanup by id ("sweep:strangers")
  *   hal_archive_set_pref → quotaGb, followed, fromNearby, mirrorSmall
+ *   hal_node_status      → JSON: serving, pointers, authors, query rates, spark…
+ *   hal_node_set_pref    → volunteer=off|auto|always
  *
  * Build: cd wapps/archiver && make
  */
@@ -64,6 +81,7 @@ static char g_status[4096];
 static char g_msg[12288];
 static char g_reqSpark[1024];
 static char g_bwSpark[1024];
+static char g_qSpark[1024];
 
 static void send_msg(const char *json) { hal_msg_send(json, str_len(json)); }
 
@@ -201,6 +219,70 @@ static void push_dashboard(void) {
     set_field_raw("mirror", str_eq(mirror, "true") ? "true" : "false");
 }
 
+/* ── Directory: the pointer role, formerly the Indexer wapp ──────────────
+ *
+ * A dashboard first, because a role nobody can inspect is a role nobody
+ * trusts: how often anyone actually asks (with the 48-hour shape, not just a
+ * lifetime total that cannot say whether anyone came today), how many links
+ * are held, for how many authors, and what the hygiene sweep removed. */
+static void push_directory(void) {
+    int n = hal_node_status(g_status, sizeof(g_status) - 1);
+    if (n <= 0) return;
+    g_status[n] = '\0';
+
+    char vol[16] = "auto";
+    char pointers[16] = "0", authors[16] = "0", peers[16] = "0";
+    char demoted[16] = "0";
+    char qLast[16] = "0", qAvg[16] = "0";
+    char ixKnown[16] = "0";
+    json_raw(g_status, "volunteer", vol, sizeof(vol));
+    json_raw(g_status, "pointers", pointers, sizeof(pointers));
+    json_raw(g_status, "authors", authors, sizeof(authors));
+    json_raw(g_status, "syncPeers", peers, sizeof(peers));
+    json_raw(g_status, "demoted", demoted, sizeof(demoted));
+    json_raw(g_status, "queriesLastHour", qLast, sizeof(qLast));
+    json_raw(g_status, "queriesAvgPerHour", qAvg, sizeof(qAvg));
+    json_raw(g_status, "querySpark", g_qSpark, sizeof(g_qSpark));
+    json_raw(g_status, "indexersKnown", ixKnown, sizeof(ixKnown));
+
+    str_copy(g_msg, "{\"type\":\"ui.stats.set\",\"field\":\"dir_dashboard\",\"tiles\":[",
+             sizeof(g_msg));
+    {
+        char hint[64];
+        str_copy(hint, qLast, sizeof(hint));
+        str_cat(hint, " in the last hour", sizeof(hint));
+        str_cat(g_msg, "{\"id\":\"rate\",\"label\":\"Queries per hour\",\"value\":\"",
+                sizeof(g_msg));
+        str_cat(g_msg, qAvg, sizeof(g_msg));
+        str_cat(g_msg, "\",\"unit\":\"avg\",\"hint\":\"", sizeof(g_msg));
+        str_cat(g_msg, hint, sizeof(g_msg));
+        str_cat(g_msg, "\",\"spark\":", sizeof(g_msg));
+        str_cat(g_msg, g_qSpark[0] ? g_qSpark : "[]", sizeof(g_msg));
+        str_cat(g_msg, "}", sizeof(g_msg));
+    }
+    str_cat(g_msg, ",", sizeof(g_msg));
+    tile("pointers", "Links", pointers, "", "", "", 0);
+    str_cat(g_msg, ",", sizeof(g_msg));
+    tile("authors", "Authors", authors, "", "", "", 0);
+    str_cat(g_msg, ",", sizeof(g_msg));
+    tile("sync", "Synced with", peers, "peers", "", "", 0);
+    str_cat(g_msg, ",", sizeof(g_msg));
+    tile("hygiene", "Pruned", demoted, "", "", "", 0);
+    str_cat(g_msg, ",", sizeof(g_msg));
+    tile("network", "Directories", ixKnown, "", "", "", 0);
+    str_cat(g_msg, "]}", sizeof(g_msg));
+    send_msg(g_msg);
+
+    /* Two switches, three states: off / auto (plugged-only) / always. */
+    set_field_raw("dir_enabled", str_eq(vol, "off") ? "false" : "true");
+    set_field_raw("dir_plugged", str_eq(vol, "always") ? "false" : "true");
+}
+
+static void refresh(void) {
+    push_dashboard();
+    push_directory();
+}
+
 static void set_pref(const char *kv) {
     hal_archive_set_pref(kv, str_len(kv));
     push_dashboard();
@@ -221,12 +303,12 @@ static void toggle_from(const char *buf, const char *field, const char *key) {
 /* ── Module entry points ─────────────────────────────────────────────── */
 int32_t module_init(void) {
     hal_log(6, "[archiver] up", 13);
-    push_dashboard();
+    refresh();
     return 0;
 }
 
 int32_t module_tick(void) {
-    push_dashboard();
+    refresh();
     return 0;
 }
 
@@ -240,7 +322,24 @@ int32_t module_handle_event(void) {
     if (!json_raw(buf, "command", cmd, sizeof(cmd))) return 0;
 
     if (str_eq(cmd, "ready") || str_eq(cmd, "refresh")) {
-        push_dashboard();
+        refresh();
+    } else if (str_eq(cmd, "dir_enabled_changed") ||
+               str_eq(cmd, "dir_plugged_changed")) {
+        /* The directory offer, granted and revoked on its own: two switches
+         * onto three states. Read BOTH every time -- "enabled" alone cannot
+         * tell auto from always, and guessing the other one silently moves a
+         * setting the owner did not touch. */
+        char en[8] = "", pl[8] = "";
+        json_raw(buf, "dir_enabled", en, sizeof(en));
+        json_raw(buf, "dir_plugged", pl, sizeof(pl));
+        const char *state = str_eq(en, "true")
+                                ? (str_eq(pl, "false") ? "always" : "auto")
+                                : "off";
+        char kv[32];
+        str_copy(kv, "volunteer=", sizeof(kv));
+        str_cat(kv, state, sizeof(kv));
+        hal_node_set_pref(kv, str_len(kv));
+        push_directory();
     } else if (str_eq(cmd, "enabled_changed")) {
         /* Enabling takes whatever limit the picker shows; disabling means zero,
          * and zero means this device holds nothing for anybody. */

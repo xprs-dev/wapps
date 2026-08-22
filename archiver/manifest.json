@@ -1,27 +1,50 @@
 {
-  "id":              "tools.xprs.archiver",
-  "version":         "0.5.1",
-  "kind":            "app",
-  "title":           "Archiver",
-  "description":     "Archiver - keep copies of other people's posts and files, so they survive when the device that made them is offline.",
-  "summary":         "Pointers are worthless if every copy they point at is asleep or gone, so somebody has to hold other people's bytes. This is that offer, made deliberately: a quota you set (zero by default, because silence is not consent), what it accepts (the authors you follow, and the peers with nowhere else to go — LAN, Bluetooth, LoRa), and a list of everything being held for others with a Drop on every row. A quota is a ceiling, not a target: full is full, and nothing of yours is ever evicted to make room.",
-  "icon":            "media/icons/archiver.svg",
-  "color":           "#6A1B9A",
-  "tags":            ["archive", "storage", "nostr", "reticulum", "hosting"],
-  "entry_ui":        "screens/home.ui.json",
+  "id": "tools.xprs.archiver",
+  "version": "0.6.0",
+  "kind": "app",
+  "title": "Archiver",
+  "description": "Archiver - hold other people's posts and files so they survive their device going offline, and answer 'where can I find npub X'.",
+  "summary": "Two offers, granted and revoked separately. Storage holds other people's bytes: a quota you set (zero by default, because silence is not consent), what it accepts, and everything held for others with a Drop on every row - a quota is a ceiling, not a target, and nothing of yours is ever evicted to make room. Directory holds only pointers, which is a phone book rather than a library: it remembers WHERE things are and stores no one else's content, so one that vanishes costs the network a directory rather than an archive. Both show exactly what they are doing for the network before they ask you for anything.",
+  "icon": "media/icons/archiver.svg",
+  "color": "#6A1B9A",
+  "tags": [
+    "archive",
+    "storage",
+    "indexer",
+    "nostr",
+    "reticulum",
+    "hosting",
+    "dht"
+  ],
+  "entry_ui": "screens/home.ui.json",
   "tick_interval_ms": 5000,
-  "permissions":     [],
-  "platforms":       ["linux", "windows", "macos", "android"],
-  "hardware":        ["N/A", "intel", "arm"],
+  "permissions": [],
+  "platforms": [
+    "linux",
+    "windows",
+    "macos",
+    "android"
+  ],
+  "hardware": [
+    "N/A",
+    "intel",
+    "arm"
+  ],
   "provides": {
-    "functions":       [],
-    "events":          [],
-    "variables":       [],
+    "functions": [],
+    "events": [],
+    "variables": [],
     "functionalities": []
   },
   "requires": {
-    "hal":       ["log", "msg", "kv", "archive"],
-    "events":    [],
+    "hal": [
+      "log",
+      "msg",
+      "kv",
+      "archive",
+      "node"
+    ],
+    "events": [],
     "libraries": [],
     "variables": []
   }

@@ -1,7 +1,7 @@
 [
   {
     "$": "screen",
-    "name": "Archiver",
+    "name": "Storage",
     "icon": "archive",
     "tip": "Keeps copies of other people's posts and files, so they survive when the device that made them is offline. Nothing of yours is deleted to make room.",
     "children": [
@@ -81,6 +81,35 @@
         "confirm": true,
         "confirm-label": "Delete archived storage?",
         "confirm-text": "Everything this device is keeping for other people will be deleted. Your own files, and anything you chose to keep, are not touched."
+      }
+    ]
+  },
+  {
+    "$": "screen",
+    "name": "Directory",
+    "icon": "hub",
+    "tip": "An indexer tells the network which devices hold the posts and files of each npub. It stores addresses, never the content.",
+    "children": [
+      {
+        "$": "field",
+        "name": "dir_enabled",
+        "$type": "bool",
+        "label": "Answer \"who has this?\"",
+        "default": false,
+        "apply": "dir_enabled_changed"
+      },
+      {
+        "$": "field",
+        "name": "dir_dashboard",
+        "$type": "stats"
+      },
+      {
+        "$": "field",
+        "name": "dir_plugged",
+        "$type": "bool",
+        "label": "Only when plugged in",
+        "default": true,
+        "apply": "dir_plugged_changed"
       }
     ]
   }
