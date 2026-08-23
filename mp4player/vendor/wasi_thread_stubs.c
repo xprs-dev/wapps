@@ -2,7 +2,7 @@
  * POSIX semaphore stubs for wasm32-wasi.
  *
  * openh264's multi-threaded decode path references sem_* (and is compiled
- * in), but Aurora runs the decoder SINGLE-THREADED, so these are never
+ * in), but XPRS runs the decoder SINGLE-THREADED, so these are never
  * actually called at runtime. They exist only to satisfy the linker on a
  * wasi-sysroot that declares <semaphore.h> but ships no implementation.
  */

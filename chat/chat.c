@@ -1,6 +1,6 @@
 /*
  * aprs.c — APRS-IS client library implementation (see aprs.h).
- * Ported from the XPRS reference; built on the Aurora HAL sockets.
+ * Ported from the XPRS reference; built on the XPRS app HAL sockets.
  */
 #include "chat.h"
 #include "xprs_wasm_hal.h"
@@ -103,7 +103,7 @@ void aprs_build_login(char *out, unsigned max, const char *callsign,
   a_cat(out, callsign, max);
   a_cat(out, " pass ", max);
   char nb[16]; a_itoa(passcode, nb); a_cat(out, nb, max);
-  a_cat(out, " vers Aurora 1.0 filter r/", max);
+  a_cat(out, " vers XPRS 1.0 filter r/", max);
   char db[24];
   a_dtoa(lat, db, 4); a_cat(out, db, max); a_cat(out, "/", max);
   a_dtoa(lon, db, 4); a_cat(out, db, max); a_cat(out, "/", max);
@@ -137,7 +137,7 @@ void aprs_login_ex(int handle, const char *callsign, int passcode,
   a_cat(line, callsign, sizeof(line));
   a_cat(line, " pass ", sizeof(line));
   char nb[16]; a_itoa(passcode, nb); a_cat(line, nb, sizeof(line));
-  a_cat(line, " vers Aurora 1.0 filter ", sizeof(line));
+  a_cat(line, " vers XPRS 1.0 filter ", sizeof(line));
   char filt[640];
   aprs_build_filter(filt, sizeof(filt), lat, lon, radius_km, extra);
   a_cat(line, filt, sizeof(line));

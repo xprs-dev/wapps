@@ -51,7 +51,7 @@ Two transports, complementary:
 
 1. **Blossom-compatible HTTP endpoint** (server) — simple, direct,
    NOSTR-ecosystem compatible: any Blossom client can `GET /<sha256>` from an
-   Aurora device, and Aurora can fetch from any Blossom server.
+   XPRS device, and XPRS can fetch from any Blossom server.
 2. **BitTorrent-compatible client** — swarm download/seed with DHT peer
    discovery, for files too big or too popular for point-to-point HTTP.
 
@@ -145,7 +145,7 @@ Endpoints (Blossom BUDs, serving the shared `MediaArchive`):
 | `DELETE /<sha256-hex>`       | BUD-02 | only by the original uploader; optional in v1 |
 
 Auth: the Blossom `Authorization: Nostr <base64-event>` header — a **kind
-24242** NOSTR event signed with standard **BIP-340 Schnorr**. Aurora profiles
+24242** NOSTR event signed with standard **BIP-340 Schnorr**. XPRS profiles
 already hold secp256k1 keys; verification needs a proper BIP-340 verify
 (pointycastle primitives; note: XPRS section 14 short-Schnorr is NOT BIP-340 — this
 is a separate, standard implementation, also reusable later for NOSTR relay
@@ -158,7 +158,7 @@ Blob descriptor (returned by PUT/list):
 Wapp control: `hal_share_server(start|stop, port)` + `hal_share_status` →
 shown in the Files wapp Settings (running, port, bytes served).
 
-Result: two Aurora stations (or any NOSTR/Blossom client) can fetch each
+Result: two XPRS stations (or any NOSTR/Blossom client) can fetch each
 other's referenced media over HTTP/LAN/internet — the simplest "downloader
 becomes provider" loop.
 

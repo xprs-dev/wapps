@@ -13,7 +13,7 @@ fields, single spaces, `t:` first, `m:` last and greedy, 250 bytes maximum:
 t:message     f:X16JK8 d:CT1ABC ts:2026-08-08_14:26:40 m:hello
 t:message     f:X16JK8 d:WX     ts:2026-08-08_14:26:40 m:Net at 8pm
 t:message     f:X16JK8          ts:2026-08-08_14:26:40 m:>>anyone around?
-t:observation f:X16JK8          ts:2026-08-08_14:26:40 pos:38.7223,-9.1393 m:Aurora BLE
+t:observation f:X16JK8          ts:2026-08-08_14:26:40 pos:38.7223,-9.1393 m:XPRS BLE
 ```
 
 (Spaces are single on the wire; they are lined up above only to read.)

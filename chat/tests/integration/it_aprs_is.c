@@ -5,7 +5,7 @@
  * This is NOT part of the wasm unit suite (tests/test_*.c): the wasm
  * runner is synchronous and can't wait on async network I/O, so a live
  * test can't run inside the editor's Tests tab. Instead this is a
- * standalone native harness that backs the Aurora HAL socket calls
+ * standalone native harness that backs the XPRS app HAL socket calls
  * (hal_socket_*) with real POSIX sockets and links the SAME aprs.c the
  * wapp ships — so it genuinely tests our receive + send code on the wire.
  *

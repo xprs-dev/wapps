@@ -1,7 +1,7 @@
 /*
  * APRS station wapp — Map / Messenger / Beacon / Settings.
  *
- * Mirrors the mature XPRS APRS UI on top of Aurora primitives:
+ * Mirrors the mature XPRS APRS UI on top of XPRS primitives:
  *  - Map      : pins for stations/messages received in the filter area
  *               (host renders ui.map.marker pushed from parsed packets)
  *  - Messenger: chat view of APRS text messages addressed to us
@@ -3362,7 +3362,7 @@ static void do_geochat_send(const char *buf) {
   if (!body[0]) return;
   /* Long geo-chat is sent as several position beacons, each comment chunk
    * prefixed ">>" so every part lands on the Live tab (here and on other
-   * Aurora stations). Reserve 2 chars of the comment budget for ">>". */
+   * XPRS stations). Reserve 2 chars of the comment budget for ">>". */
   int avail = APRS_MAX_MSG_LEN - 2;
   char chunk[80];
   int n = 0;
@@ -7481,8 +7481,8 @@ static void aprs_tick(void) {
   if (g_auto && g_logged) {
     uint64_t now = hal_time_epoch();
     if (now - g_last_beacon >= (uint64_t)g_interval) {
-      aprs_send_beacon(g_sock, g_call, g_lat, g_lon, g_symbol, "TCPIP*", "Aurora auto-beacon");
-      push_marker(g_call, g_lat, g_lon, "blue", "Aurora auto-beacon");
+      aprs_send_beacon(g_sock, g_call, g_lat, g_lon, g_symbol, "TCPIP*", "XPRS auto-beacon");
+      push_marker(g_call, g_lat, g_lon, "blue", "XPRS auto-beacon");
       g_last_beacon = now;
       status("TX auto-beacon");
     }
