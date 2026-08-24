@@ -5230,6 +5230,13 @@ static void lxmf_drain(void) {
     jstr(js, "content", content, sizeof(content));
     jstr(js, "hash", hash, sizeof(hash));
     if (!content[0]) continue;
+    /* Protocol, not correspondence. An XPRS wire ("t:command", "t:result",
+     * "t:status" ...) can reach us over LXMF because that is a lane the
+     * public hubs actually forward -- but it is machinery talking to
+     * machinery, and a bubble reading "t:result f:X10G3D d:..." is spam in
+     * somebody's conversation. The host files these into its own XPRS funnel;
+     * the chat only ever shows what a person wrote. */
+    if (s_pre(content, "t:")) continue;
     if (gseen_has(hash)) continue;
     gseen_add(hash);
 
