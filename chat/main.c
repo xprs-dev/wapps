@@ -7556,7 +7556,17 @@ void module_tick(void) {
    * bounded read -- the archive query is an indexed table on the host. */
   {
     static unsigned xroom_tick = 0;
-    if ((++xroom_tick % 4) == 0) {
+    /* Four seconds while somebody is reading, a minute when nobody is.
+     *
+     * This ran every four seconds whether or not a UI was attached -- a 48-row
+     * query on the host's archive, in a pocket, for a room no one was looking
+     * at. The neighbouring nearby/picker block already gates on
+     * hal_ui_attached() for exactly this reason. The rows are not lost while
+     * we are slow: they sit in the host archive and the next read collects
+     * them all, so the only thing a longer interval costs is how soon a
+     * message appears on a screen nobody is watching. */
+    const unsigned every = hal_ui_attached() ? 4u : 60u;
+    if ((++xroom_tick % every) == 0) {
       /* 48 rows x ~360 B measured on a live archive = ~17 KB. The buffer must
        * lead the window: hal_xprs_history returns a NEGATIVE length when the
        * answer does not fit, this loop only runs for n > 0, and the room would
