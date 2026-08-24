@@ -1797,6 +1797,13 @@ static void chanppl_load(void) {
 static void lxmf_title(const char *id, char *out, unsigned osz);
 static void convo_title(const char *id, char *out, unsigned osz) {
   if (s_pre(id, "lxmf:")) { lxmf_title(id, out, osz); return; }
+  /* The two scope rooms are not groups with a name and a reach tag -- they
+   * ARE the reach. "#GLOBAL (local)" was the old naming colliding with them:
+   * the tag below reads the '*' that marks a global GROUP, which a scope room
+   * does not carry, so the room that goes everywhere announced itself as
+   * local. Say what each one is instead. */
+  if (s_eq(id, XROOM_LOCAL))  { s_cpy(out, "Local chat", osz);  return; }
+  if (s_eq(id, XROOM_GLOBAL)) { s_cpy(out, "Global chat", osz); return; }
   if (id[0] != '#') { s_cpy(out, id, osz); return; }
   char name[8]; int j = 0;
   for (int i = 1; id[i] && id[i] != '*' && j < 6; i++) name[j++] = id[i];

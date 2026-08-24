@@ -924,7 +924,12 @@ void room_render_tree_with(const char *extra_items) {
   g_rail[0] = 0;
   s_cat(g_rail, "{\"type\":\"ui.rooms.set\",\"field\":\"rooms\",\"rooms\":[", sizeof(g_rail));
   g_rail_first = 1;
-  rail_add(MAIN_ROOM_ID, 0);
+  /* No "Main room". This client has exactly two places a broadcast can land --
+   * Local chat and Global chat, decided by the message's own scope (13.11) --
+   * and both are conversations, not rooms. A third entry that was neither and
+   * held nothing was a door onto an empty room. The rooms machinery below is
+   * untouched: a station that creates real rooms still gets them on the rail
+   * through extra_items. */
   rail_children(MAIN_ROOM_ID, 1);
   /* Channels (broadcast groups, NomadNet, …) the caller wants on the same
    * rail, pre-built as JSON items — the rail is the whole navigation surface,
