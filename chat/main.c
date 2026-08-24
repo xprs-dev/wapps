@@ -994,11 +994,15 @@ static int g_notif_w = 0;
  * silenced a person genuinely saying the same thing twice — the second "ok" of
  * the day never notified. 60s covers every multi-transport race we have. */
 #define NOTIF_DUP_WINDOW_SEC 60
-static int notif_dup(const char *from, const char *text) {
+static uint32_t notif_hash(const char *from, const char *text) {
   uint32_t h = 5381;
   for (int i = 0; from && from[i]; i++) h = h * 33u + (unsigned char)from[i];
   for (int i = 0; text && text[i]; i++) h = h * 33u + (unsigned char)text[i];
-  if (!h) h = 1;
+  return h ? h : 1u;
+}
+
+static int notif_dup(const char *from, const char *text) {
+  uint32_t h = notif_hash(from, text);
   uint64_t now = hal_time_epoch();
   for (int i = 0; i < 16; i++) {
     if (g_notif_seen[i] == h && now - g_notif_time[i] < NOTIF_DUP_WINDOW_SEC) {
@@ -1012,8 +1016,15 @@ static int notif_dup(const char *from, const char *text) {
 }
 
 static int is_group(const char *id);       /* '#' prefix; defined below */
+/* [mid] is the message's durable id where the caller has one. It becomes the
+ * notification's dedupe tag, which the host honours ACROSS RESTARTS -- and a
+ * restart is exactly when this matters: every start re-ingests the backlog and
+ * re-announced messages the user read days ago, which is how the bell ends up
+ * permanently lit. The 60-second notif_dup ring above cannot help there; it
+ * lives in RAM and dies with the process. Falls back to a hash of sender +
+ * text for the callers that have no id to give. */
 static void notify_msg(const char *title, const char *from, const char *text,
-                       const char *body) {
+                       const char *body, const char *mid) {
   if (!title || !title[0]) return;
   /* Only what this wapp can actually open and show. A 1:1 keyed by callsign is
    * Mail's; notifying it here would double up and then land the user in a wapp
@@ -1039,6 +1050,21 @@ static void notify_msg(const char *title, const char *from, const char *text,
    * reads as "notifications don't work". */
   s_cat(m, "\",\"convo\":\"", sizeof(m));
   jesc(m, sizeof(m), title);
+  s_cat(m, "\",\"tag\":\"chat:", sizeof(m));
+  jesc(m, sizeof(m), title);
+  s_cat(m, ":", sizeof(m));
+  if (mid && mid[0]) {
+    jesc(m, sizeof(m), mid);
+  } else {
+    char hx[12];
+    uint32_t h = notif_hash(from, text);
+    for (int i = 7; i >= 0; i--) {
+      hx[i] = "0123456789abcdef"[h & 0xf];
+      h >>= 4;
+    }
+    hx[8] = 0;
+    s_cat(m, hx, sizeof(m));
+  }
   s_cat(m, "\"}", sizeof(m));
   hal_msg_send(m, s_len(m));
 }
@@ -2672,7 +2698,7 @@ static int convo_deliver(const char *id, const char *dir, const char *from,
    * of once per line. The content dedup above means a message arriving over two
    * transports notifies only once. Group bulletins notify via their own caller;
    * our own echoes (dir "out") never notify. */
-  if (s_eq(dir, "in") && id[0] != '#') notify_msg(from, from, disp, disp);
+  if (s_eq(dir, "in") && id[0] != '#') notify_msg(from, from, disp, disp, mid);
   /* WhatsApp-style receipts: a freshly-delivered inbound 1:1 that carried an `am`
    * confirms DELIVERED to the sender (over BLE/RNS; APRS uses the native ack sent
    * by route_frame) and queues a READ receipt for when the user opens the chat. */
@@ -4447,7 +4473,7 @@ static void room_event_ingest(const char *evt) {
   if (room_is_self(pub)) return;   /* our own federated-back copy; already echoed */
   s_cpy(from, pub, 13);
   convo_msg(rid, "in", from, content, "", "", 0, 0, "NOS", id, "", "verified", 0, 0);
-  notify_msg(rid, from, content, content);
+  notify_msg(rid, from, content, content, id);
 }
 
 /* ── Rooms widget commands (Discord-like layout) ── */
@@ -5090,7 +5116,7 @@ static void group_note_ingest(const char *evt) {
   char from[16]; s_cpy(from, pub, 13);    /* short pubkey until a profile lands */
   convo_msg(cid, "in", from, content, "", "", 0, 0, "NOS", id, "", "verified", 0, 0);
   convo_touch(cid, content, 0);
-  notify_msg(cid, from, content, content);
+  notify_msg(cid, from, content, content, id);
 }
 
 /* Ask the host directory who [dest] is and remember the answer. Cheap no-op
@@ -5319,7 +5345,7 @@ static void lxmf_drain(void) {
     if (sent_ts > 0) g_msg_epoch = (uint64_t)sent_ts;
     convo_msg(cid, "in", who, disp, "", "", 0, 0, "LXM", mid, parent, "", 0, 0);
     convo_touch(cid, disp, 0);
-    notify_msg(cid, who, disp, disp);
+    notify_msg(cid, who, disp, disp, mid);
   }
 }
 
@@ -5667,7 +5693,7 @@ static void deliver_bulletin(const char *gname, const char *from,
       activity_feed("", from, disp_body, via, flat, flon, par);
       char fprev[160]; s_cpy(fprev, from, sizeof(fprev));
       s_cat(fprev, ": ", sizeof(fprev)); s_cat(fprev, disp_body, sizeof(fprev));
-      notify_msg("Activity", from, disp_body, fprev);
+      notify_msg("Activity", from, disp_body, fprev, 0);
     }
     return;
   }
@@ -5684,13 +5710,13 @@ static void deliver_bulletin(const char *gname, const char *from,
     /* Notify only on a freshly-delivered bubble — recurring/duplicate bulletins
      * return 0 and stay silent. */
     if (convo_deliver(gid, "in", from, text, preview, via) && !is_like)
-      notify_msg(gid, from, cbody, preview);
+      notify_msg(gid, from, cbody, preview, 0);
   }
   /* Local: a nearby sender, OR — when no global pull is active (g/BLN* off) —
    * trust the region filter that the bulletin is in-range. */
   if (has_l && (within || !any_global_group())) {
     if (convo_deliver(lid, "in", from, text, preview, via) && !is_like)
-      notify_msg(lid, from, cbody, preview);
+      notify_msg(lid, from, cbody, preview, 0);
   }
 }
 
