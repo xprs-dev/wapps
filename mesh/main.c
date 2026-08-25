@@ -69,6 +69,13 @@ static void json_cat_escaped(char *d, const char *s, unsigned m) {
 static int  g_xprs_only = 1;       /* show only xprs nodes (+ hubs)  */
 static char g_service[32]  = "";      /* show only nodes with this service */
 static char g_search[64]   = "";      /* substring match on label/id/svc   */
+/* Role bucket: "" (any) | "super" | "archive" | "normal". Deliberately NOT
+ * persisted alongside xonly/svc/q below: the host owns the chip's state and
+ * re-initialises it every time the page opens, so a filter remembered here
+ * would outlive the chip that shows it -- which is exactly how xonly already
+ * ends up saying "on" over a graph that is still filtered off. Session-only
+ * keeps the role chip the truth about the role filter. */
+static char g_role[12]     = "";
 static int  g_ready = 0;              /* the page has loaded once          */
 
 static void load_state(void) {
@@ -114,11 +121,27 @@ static void build_filter(char *out, unsigned m) {
     json_cat_escaped(out, g_service, m);
     str_cat(out, "\",\"search\":\"", m);
     json_cat_escaped(out, g_search, m);
-    str_cat(out, "\"}", m);
+    str_cat(out, "\"", m);
+    /* Omitted when unset, so the common frame stays byte-identical to what
+     * every build before this one sent. */
+    if (g_role[0]) {
+        str_cat(out, ",\"role\":\"", m);
+        json_cat_escaped(out, g_role, m);
+        str_cat(out, "\"", m);
+    }
+    str_cat(out, "}", m);
 }
 
 static void push_graph(void) {
-    char filter[160];
+    /* 256, not 160. Worst case is every escapable character in both strings:
+     * 17 for the xprsOnly clause + 12 + 31x2 for service + 12 + 63x2 for
+     * search + 21 for role + the closing brace and NUL = 253. At 160 that
+     * truncated MID-STRING, and both str_cat and json_cat_escaped stop
+     * silently -- so the wapp shipped invalid JSON, the host's jsonDecode
+     * swallowed it (wapp_engine.dart, wrapped in catch), every field fell back
+     * to its default, and the graph quietly came back UNFILTERED. Plain ASCII
+     * fitted at 138, which is why it was never noticed. */
+    char filter[256];
     build_filter(filter, sizeof(filter));
     int n = hal_rns_nodes(filter, str_len(filter), g_data, sizeof(g_data));
     if (n < 0) {
@@ -244,6 +267,7 @@ static void handle_command(const char *cmd, const char *full) {
         g_xprs_only = json_bool(full, "xprsOnly", g_xprs_only);
         json_str(full, "service", g_service, sizeof(g_service));
         json_str(full, "search", g_search, sizeof(g_search));
+        json_str(full, "role", g_role, sizeof(g_role));
         save_state();
         push_graph();
         return;

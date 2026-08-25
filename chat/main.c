@@ -255,6 +255,7 @@ static const char *via_label(const char *via) {
   if (s_eq(via, "vhf"))     return "VHF";
   if (s_eq(via, "uhf"))     return "UHF";
   if (s_eq(via, "hf"))      return "HF";
+  if (s_eq(via, "radio"))   return "Radio";
   if (s_eq(via, "rns"))     return "Reticulum";
   /* Not a bearer: a packet handed over by a station that had been holding it
    * for us. Where it travelled last is less interesting than the fact that
@@ -454,40 +455,14 @@ static void status(const char *text) {
   hal_msg_send(m, s_len(m));
 }
 
-/* Persistent transport indicators on the map (replaces flickering toasts):
- * Reticulum up? APRS-IS connected? BLE active? Pushed only when a value
- * changes, so a flapping link never spams. -1 = nothing pushed yet. */
-static int g_ind_net = -1, g_ind_ble = -1, g_ind_adapter = -1, g_ind_ret = -1;
-static void push_status(void) {
-  int net = (g_sock >= 0 && g_logged) ? 1 : 0;
-  int ret = rns_up() ? 1 : 0;
-  /* The physical Bluetooth adapter state (the user can turn Bluetooth off at the
-   * OS level at any time). BLE is "on" only when our setting is enabled AND the
-   * adapter is actually powered. */
-  int adapter = hal_ble_available() ? 1 : 0;
-  int ble = (g_ble_on && adapter) ? 1 : 0;
-  if (net == g_ind_net && ble == g_ind_ble && adapter == g_ind_adapter &&
-      ret == g_ind_ret) return;
-  g_ind_net = net; g_ind_ble = ble; g_ind_adapter = adapter; g_ind_ret = ret;
-  char m[256];
-  /* Reticulum first — it is the primary transport. */
-  s_cpy(m, "{\"type\":\"ui.map.status\",\"items\":["
-           "{\"id\":\"ret\",\"label\":\"RET\",\"on\":", sizeof(m));
-  s_cat(m, ret ? "true" : "false", sizeof(m));
-  s_cat(m, "},{\"id\":\"aprsis\",\"label\":\"NET\",\"on\":", sizeof(m));
-  s_cat(m, net ? "true" : "false", sizeof(m));
-  s_cat(m, "}", sizeof(m));
-  /* Only advertise the BLE channel when Bluetooth is actually on. With the
-   * adapter off the channel doesn't exist, so hide the chip entirely rather
-   * than showing it (which wrongly implied BLE was available). */
-  if (adapter) {
-    s_cat(m, ",{\"id\":\"ble\",\"label\":\"BLE\",\"on\":", sizeof(m));
-    s_cat(m, ble ? "true" : "false", sizeof(m));
-    s_cat(m, "}", sizeof(m));
-  }
-  s_cat(m, "]}", sizeof(m));
-  hal_msg_send(m, s_len(m));
-}
+/* The transport indicators (`ui.map.status` -> the green RET / NET / BLE chips
+ * in the AppBar) are gone. They sat in the one place a chat screen has for its
+ * title and its way out, and told the reader something they cannot act on:
+ * which of three transports happened to be up. Where a transport matters it is
+ * said where it matters -- the per-message bearer chip says how THAT message
+ * arrived, and Settings says what is switched on. The host still renders
+ * `ui.map.status` for any wapp that pushes it (docs/aprs.md section 5); this
+ * one no longer does. */
 
 /* Minutes east of UTC, read once and reused.
  *
@@ -4830,15 +4805,19 @@ static void render_searchall(void) {
         first = 0;
         s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, rid);
         s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, name[0] ? name : rid);
-        s_cat(o, "\",\"subtitle\":\"Room", sz);
-        if (convo_known(rid)) s_cat(o, " - joined", sz);
-        /* A NIP-72 room DOES have per-author messages, so this count is real
-         * (still "seen", never "members" — rooms publish no roster either). */
-        { int seen = room_people_seen(rid);
+        /* The filter chip already said "Rooms", so the subtitle does not
+         * repeat it — it carries only what differs between one row and the
+         * next: have I joined, and is anyone there. (A NIP-72 room DOES have
+         * per-author messages, so the count is real — still "seen", never
+         * "members": rooms publish no roster.) */
+        s_cat(o, "\",\"subtitle\":\"", sz);
+        { const char *sep = "";
+          if (convo_known(rid)) { s_cat(o, "Joined", sz); sep = " - "; }
+          int seen = room_people_seen(rid);
           if (seen > 0) {
             char nb[12]; u_itoa((unsigned)seen, nb);
-            s_cat(o, " - ", sz); s_cat(o, nb, sz);
-            s_cat(o, seen == 1 ? " person seen" : " people seen", sz);
+            s_cat(o, sep, sz); s_cat(o, nb, sz);
+            s_cat(o, seen == 1 ? " person" : " people", sz);
           } }
         s_cat(o, "\",\"icon\":\"forum\"}", sz);
       }
@@ -4848,7 +4827,7 @@ static void render_searchall(void) {
   s_cat(o, "]}", sz);
 
   /* ── Channels and open conversations (what is on your rail) ── */
-  s_cat(o, ",{\"title\":\"Channels and conversations\",\"items\":[", sz);
+  s_cat(o, ",{\"title\":\"Chats\",\"items\":[", sz);
   {
     int first = 1;
     /* Same order as the rail: most recently visited or talked to first. */
@@ -4873,9 +4852,11 @@ static void render_searchall(void) {
       s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, title);
       s_cat(o, "\",\"subtitle\":\"", sz);
       if (lx) {
-        s_cat(o, "Direct chat - LXMF ", sz);
-        char sh[13]; s_cpy(sh, id + 5, sizeof(sh)); s_cat(o, sh, sz);
-        s_cat(o, "...", sz);
+        /* Enough address to tell two peers apart, without the word "LXMF" or
+         * the twelve characters after it — the row's job is to be picked from
+         * a list, not to be read out. */
+        s_cat(o, "Direct - ", sz);
+        char sh[9]; s_cpy(sh, id + 5, sizeof(sh)); s_cat(o, sh, sz);
       } else {
         s_cat(o, "Channel", sz);
         /* Only when senders were actually distinguishable — see lxmf_drain. */
@@ -4883,7 +4864,7 @@ static void render_searchall(void) {
         if (seen > 0) {
           char nb[12]; u_itoa((unsigned)seen, nb);
           s_cat(o, " - ", sz); s_cat(o, nb, sz);
-          s_cat(o, seen == 1 ? " person seen" : " people seen", sz);
+          s_cat(o, seen == 1 ? " person" : " people", sz);
         }
       }
       s_cat(o, "\",\"icon\":\"", sz);
@@ -4921,8 +4902,8 @@ static void render_searchall(void) {
         if (disp) jesc(o, sz, disp);
         else { s_cat(o, "LXMF ", sz); char sh[9]; s_cpy(sh, dest, sizeof(sh)); s_cat(o, sh, sz); }
         s_cat(o, "\",\"subtitle\":\"", sz);
-        s_cat(o, jbool(slice, "xprs") ? "XPRS device" : "NomadNet", sz);
-        s_cat(o, live ? " - online now" : " - seen earlier", sz);
+        s_cat(o, jbool(slice, "xprs") ? "XPRS" : "NomadNet", sz);
+        s_cat(o, live ? " - online" : " - seen earlier", sz);
         s_cat(o, "\",\"icon\":\"person\"}", sz);
       } else if (s_eq(kind, "xprs")) {
         const char *target = call[0] ? call : npub;
@@ -4932,8 +4913,8 @@ static void render_searchall(void) {
           s_cat(o, "{\"id\":\"np:", sz); jesc(o, sz, target);
           s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, call[0] ? call : npub);
           s_cat(o, "\",\"subtitle\":\"XPRS", sz);
-          s_cat(o, live ? " - online now" : "", sz);
-          s_cat(o, " - opens in Messages\",\"icon\":\"person\"}", sz);
+          s_cat(o, live ? " - online" : "", sz);
+          s_cat(o, "\",\"icon\":\"person\"}", sz);
         }
       }
       p = fnd_next_obj(p, slice, sizeof(slice));
@@ -5753,7 +5734,10 @@ static int is_sig_line(const char *t) {
 #define RA_FLUSH 2            /* seconds idle before flushing */
 typedef struct {
   int used; char from[16]; char grp[8]; char line[10][72];
-  int seen; uint64_t t; int within; char via[4];
+  /* Wide enough for the widest bearer name the host reports ("espnow"), not
+   * just the 3-letter routing tokens: a truncated bearer is a chip that names
+   * a transport nobody has. */
+  int seen; uint64_t t; int within; char via[8];
 } ra_t;
 static ra_t g_ra[RA_MAX];
 static void ra_emit(ra_t *e) {
@@ -5821,7 +5805,9 @@ static void ra_flush(void) {
  * ("ENC1:<blob> ~<60-char sig>", ~110+ chars) in ONE frame — so a part must be
  * big enough to hold a full single-frame wire, else it is truncated and the
  * signature/ciphertext is corrupted (decrypt fails). 256 covers it. */
-typedef struct { int used; char from[16]; char via[4]; char part[DA_PARTS][256]; int n; uint64_t t; } da_t;
+/* via[8]: same reason as ra_t — a bearer name ("espnow") is longer than the
+ * routing tokens this used to hold. */
+typedef struct { int used; char from[16]; char via[8]; char part[DA_PARTS][256]; int n; uint64_t t; } da_t;
 static da_t g_da[DA_MAX];
 static void trc(const char *tag, const char *a, const char *b) {
   char t[160]; s_cpy(t, "[trc] ", sizeof(t)); s_cat(t, tag, sizeof(t));
@@ -7380,7 +7366,7 @@ static void ble_reconcile(void) {
     g_ble_started = 1;
     status("Bluetooth on");
     /* No toast: the BLE channel availability is shown by the BLE chip in the
-     * AppBar (see push_status -> ui.map.status). */
+     * AppBar. */
   } else if (!g_ble_on && g_ble_started) {
     ble_stop();
     g_ble_started = 0;
@@ -7677,7 +7663,6 @@ void module_tick(void) {
   /* BLE runs independently of the internet link (off-grid). Reconcile the
    * scan/advertise state, drain inbound frames, and beacon our position. */
   ble_reconcile();
-  push_status();   /* refresh APRS-IS / BLE indicators (only on change) */
 
   /* The people picker is open: announces keep arriving (a hub replays its
    * whole cached table over the first minutes of a link), so re-render on a
@@ -7782,10 +7767,18 @@ void module_tick(void) {
   /* Drain inbound Reticulum datagrams (1:1 backstop + private-mode messages +
    * ?PRIV controls). Independent of APRS-IS/BLE. The payload reuses the BLE frame
    * FORMAT, so ble_handle parses + dedups it exactly like a BLE/APRS copy — shown
-   * once — but it arrived over the internet via Reticulum, so it is tagged "RET"
-   * (NOT "BLE": no Bluetooth radio was involved). If the same frame also arrives
-   * over real Bluetooth, whichever copy lands first wins the dedup and sets the
-   * tag, so a "[BLE]" tag now means it genuinely came over Bluetooth. */
+   * once. If the same frame also arrives over real Bluetooth, whichever copy
+   * lands first wins the dedup and sets the tag.
+   *
+   * The Reticulum lane is where a datagram is HANDED OVER, not where it
+   * travelled: the node reaches its peers over Bluetooth, the LAN, LoRa and
+   * the hubs alike, and every one of those used to arrive here tagged "RET"
+   * and tell the reader "Reticulum" — so a message from the board on the
+   * bench claimed to have come off the internet. The host now says which
+   * bearer carried it ("via" in the envelope: ble/lan/espnow/lora/… , or
+   * "rns" when it genuinely crossed the internet); we pass that on. "rns"
+   * becomes the routing token "RET" so everything downstream that asks
+   * "did this come off the wider network?" keeps its answer. */
   {
     static char env[1200];
     static char payb64[800];
@@ -7799,7 +7792,10 @@ void module_tick(void) {
       int fn = b64url_decode(payb64, frame, sizeof(frame) - 1);
       if (fn <= 0) continue;
       frame[fn] = 0;
-      ble_handle((const char *)frame, 0, "RET");   /* rssi 0 — Reticulum over internet, no RF */
+      char bearer[12] = "";
+      jstr(env, "via", bearer, sizeof(bearer));
+      const char *via = (!bearer[0] || s_eq(bearer, "rns")) ? "RET" : bearer;
+      ble_handle((const char *)frame, 0, via);   /* rssi 0 — no RF signal to report */
     }
   }
 

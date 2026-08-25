@@ -1304,7 +1304,10 @@ int32_t hal_rns_hubs(char *out, uint32_t out_cap);
 
 /* The observed network as a {"nodes":[...],"edges":[...],"sample":true}
  * graph. [filter] is an optional JSON object
- * {"service":str,"xprsOnly":bool,"search":str} (pass len 0 for none). */
+ * {"service":str,"xprsOnly":bool,"search":str,"role":str} (pass len 0 for
+ * none). "role" buckets a node by what it serves: "super" (a super-archiver,
+ * XPRS.md 36.9.4), "archive" (an archiver that is not a super), or "normal"
+ * (neither). An unrecognised value filters nothing. */
 __attribute__((import_module("hal"), import_name("rns_nodes")))
 int32_t hal_rns_nodes(const char *filter, uint32_t filter_len,
                       char *out, uint32_t out_cap);
