@@ -1201,6 +1201,15 @@ static void cat_thread(char *m, unsigned sz, const char *mid, const char *parent
 /* Set just before the outgoing local-echo convo_deliver of a 1:1 message so the
  * emitted bubble carries its receipt id (rid = am) + initial tick state
  * ("sent"); cleared immediately after so no other bubble picks them up. */
+/* The form the NEXT 1:1 goes out in (XPRS.md section 9.2: `x:` sealed, `m:`
+ * plain). Private by default, which is what section 9.4 says a direct message
+ * is on every band we transmit on.
+ *
+ * This is a composer setting, not a conversation mode and not something the
+ * peer is told: privacy in XPRS is a property of each packet, so either side
+ * flips it whenever they like and the wire says which was used. Nothing is
+ * negotiated and nothing has to agree. */
+static int g_want_private = 1;
 static char g_send_rid[8] = "";
 static char g_send_status[12] = "";
 static int is_group(const char *id);   /* '#' prefix; defined below */
@@ -1237,6 +1246,11 @@ static void convo_msg(const char *id, const char *dir, const char *from,
   /* Private = this message went Reticulum-only (never APRS) — the host tags the
    * bubble so it's clearly distinct from public APRS traffic. */
   if (priv) s_cat(m, ",\"private\":true", sizeof(m));
+  /* The other half of the statement (XPRS.md section 9.2). Said out loud on a
+   * 1:1 so an unlabelled bubble never has to be guessed at: `enc` set means the
+   * body was sealed, `plain` set means it was readable, and one of the two is
+   * always true of a direct message. */
+  else if (s_pre(id, "lxmf:") && !enc) s_cat(m, ",\"plain\":true", sizeof(m));
   /* WhatsApp-style receipt id + tick state (1:1 outgoing only; globals set by
    * do_convo_send around the local echo). */
   if (g_send_rid[0]) { s_cat(m, ",\"rid\":\"", sizeof(m)); s_cat(m, g_send_rid, sizeof(m)); s_cat(m, "\"", sizeof(m)); }
@@ -3011,6 +3025,18 @@ static void resolve_drain(void) {
  * conversations layout parses them from its own field names, the rooms rail
  * from its (a channel on the rail is the same group underneath). [buf] still
  * carries the settings fields (read_config, include_location). */
+/* Flip the form the next message goes out in (XPRS.md section 9.2).
+ *
+ * There is nothing to agree with the peer and nothing to store on their side:
+ * each packet says whether its body is sealed, so a conversation can alternate
+ * freely and both ends simply read what arrived. */
+static void do_convo_form(void) {
+  g_want_private = !g_want_private;
+  notify("info", g_want_private
+                     ? "Messages are private (encrypted)"
+                     : "Messages are plain text - anyone in range can read them");
+}
+
 static void convo_send_core(const char *buf, const char *id_in,
                             const char *text_in) {
   read_config(buf);
@@ -4533,7 +4559,20 @@ static void do_rooms_send(const char *buf) {
       s_cat(lwire, am, sizeof(lwire));
       s_cat(lwire, " ", sizeof(lwire));
       s_cat(lwire, text, sizeof(lwire));
-      int lx_sent = hal_lxmf_send(dest, s_len(dest), "", 0, lwire, s_len(lwire));
+      /* Ask for the form we want and be told the one we got. The bubble is
+       * labelled from the ANSWER: a message that could not be sealed must
+       * never be drawn as private (XPRS.md section 36.8 -- sealed and clear
+       * mail are released under different rules, so the label is not
+       * decoration). */
+      int form = hal_lxmf_send2(dest, s_len(dest), lwire, s_len(lwire),
+                                g_want_private ? 1u : 0u);
+      if (form < 0) {
+        notify("warning",
+               "No key for them yet - not sending in the clear. Try again in a moment.");
+        return;
+      }
+      int lx_sent = form > 0 ? 1 : 0;
+      int sealed = (form == 1);
       /* BEST HOPE. LXMF accepts a message it has no path for and holds it, so
        * "sent" says nothing about whether anyone will ever carry it. When the
        * peer is reachable nowhere, air an encrypted copy for nearby devices to
@@ -4551,7 +4590,12 @@ static void do_rooms_send(const char *buf) {
          * the rid the peer's receipt will name. */
         s_cpy(g_send_rid, am, sizeof(g_send_rid));
         s_cpy(g_send_status, "sent", sizeof(g_send_status));
-        convo_msg(rid, "out", from, disp, "", "", 0, 0, "LXM", mid, parent, "", 0, 0);
+        /* enc = it went sealed; priv = the operator asked for privacy and got
+         * it. Both are already rendered by the host (a lock badge and a
+         * "private" chip), and both were previously always zero on this path,
+         * so a 1:1 never said anything about how it travelled. */
+        convo_msg(rid, "out", from, disp, "", "", 0, 0, "LXM", mid, parent, "",
+                  sealed, sealed);
         g_send_rid[0] = 0; g_send_status[0] = 0;
         convo_touch(rid, disp, 0);
         status("TX (LXMF)");
@@ -7927,6 +7971,7 @@ void module_handle_event(void) {
   } else if (s_eq(cmd, "conversations_send")) do_convo_send(buf);
   else if (s_eq(cmd, "conversations_open")) do_convo_open(buf);
   else if (s_eq(cmd, "conversations_private")) do_convo_private(buf);
+  else if (s_eq(cmd, "conversations_form")) do_convo_form();
   else if (s_eq(cmd, "conversations_hide")) do_convo_hide(buf);
   else if (s_eq(cmd, "conversations_block")) do_convo_block(buf);
   else if (s_eq(cmd, "conversations_close")) do_convo_close(buf);

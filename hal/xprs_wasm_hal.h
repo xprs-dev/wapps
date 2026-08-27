@@ -1148,6 +1148,24 @@ int32_t hal_lxmf_send(const char *dest_hex, uint32_t dest_len,
                       const char *title, uint32_t title_len,
                       const char *content, uint32_t content_len);
 
+/* Send a 1:1 and say WHICH FORM it took (XPRS.md section 9.2).
+ *
+ *   want_private: 1 = sealed body `x:` (the section 9.4 default for a direct
+ *                     message), 0 = plain text `m:`.
+ *
+ * Returns  1 sealed, 2 plain, -1 privacy was asked for and is not possible
+ * (the recipient's key has not been heard yet -- the host has just asked for
+ * it, section 18.1, so try again shortly), 0 malformed.
+ *
+ * One call rather than "set a mode, then send": privacy in XPRS is a property
+ * of one packet, so either side may switch on any message and there is no mode
+ * to hold. Label the bubble with the RETURN VALUE, never with what was asked
+ * for -- a message that could not be sealed must never be drawn as private. */
+__attribute__((import_module("hal"), import_name("lxmf_send2")))
+int32_t hal_lxmf_send2(const char *dest_hex, uint32_t dest_len,
+                       const char *content, uint32_t content_len,
+                       uint32_t want_private);
+
 /* Relay list + live status as JSON [{"uri","scheme","status"}]. Returns bytes
  * written, or the negated required size if [out] is too small. */
 __attribute__((import_module("hal"), import_name("nostr_relays")))
