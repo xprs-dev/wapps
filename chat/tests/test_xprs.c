@@ -185,6 +185,23 @@ WAPP_TEST(a_packet_with_no_clock_still_reads) {
    * still a message; only its time is unknown. */
   char f[16], to[24], tx[256];
   unsigned long long ts = 1;
+  /* Section 6.6: a part of a split message is never displayed. Each part
+   * carries the whole envelope, so without this every part of one message
+   * became its own chat entry. */
+  {
+    char f[16], to[24], tx[256]; unsigned long long ts = 0;
+    WAPP_EXPECT_TRUE(!xprs_unpack(
+        "t:message f:X1QZ3N d:X1RD89 ts:2026-08-28_14:52:27 n:3/4 m:brown",
+        f, sizeof(f), to, sizeof(to), tx, sizeof(tx), &ts));
+    WAPP_EXPECT_TRUE(!xprs_unpack(
+        "t:message f:X1QZ3N d:X1RD89 ts:2026-08-28_14:52:27 n:1/4 x:sD",
+        f, sizeof(f), to, sizeof(to), tx, sizeof(tx), &ts));
+    /* …and an unsplit message still shows. */
+    WAPP_EXPECT_TRUE(xprs_unpack(
+        "t:message f:X1QZ3N d:X1RD89 ts:2026-08-28_14:52:27 m:whole",
+        f, sizeof(f), to, sizeof(to), tx, sizeof(tx), &ts));
+  }
+
   WAPP_EXPECT_TRUE(xprs_unpack("t:message f:X1QZ3N d:X1RD89 m:no clock here",
                                f, sizeof(f), to, sizeof(to), tx, sizeof(tx), &ts));
   WAPP_EXPECT_STR_EQ(tx, "no clock here");

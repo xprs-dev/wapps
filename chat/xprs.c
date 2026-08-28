@@ -234,6 +234,22 @@ int xprs_unpack(const char *wire, char *from, unsigned fmax, char *to,
   }
   if (type[0] != 'm') return 0;               /* message; anything else is not ours */
 
+  /* Section 6.6: "A partial message is never displayed."
+   *
+   * A long message is split into up to nine parts, each carrying `n:i/total`
+   * and the WHOLE envelope, so every part looks like a complete t:message from
+   * here. Without this test each one became its own chat entry: a single
+   * message from a neighbour arrived as four lines of `n:3/4 x:TH`, and a
+   * store-and-forward backlog draining turned that into hundreds of them.
+   *
+   * Rejoining them is the host's job, not ours -- it holds the set for ten
+   * minutes, joins the parts in order and hands us the message. A part is not
+   * a message and has nothing to show. */
+  {
+    char part[8] = "";
+    if (x_field(wire, "n", part, sizeof(part))) return 0;
+  }
+
   char d[32] = "";
   if (x_field(wire, "d", d, sizeof(d)) && d[0]) {
     if (xprs_is_station(d)) {
