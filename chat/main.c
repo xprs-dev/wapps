@@ -1129,18 +1129,25 @@ static int within_radius(const char *call) {
 static char g_convo_ids[32][40];
 static int g_convo_n = 0;
 
-/* ── The scope rooms (XPRS 13.11): #LOCAL and #GLOBAL ─────────────────────
- * Two built-in conversations carried as plain t:message broadcasts through
- * the host's XPRS lane -- the same wires the ESP32 hotspot chat and every
- * other station speak, so writing here is writing there. #LOCAL sends carry
- * scope:local (short-range bearers only, never gated to the internet);
- * #GLOBAL is the unmarked default that goes anywhere. Receive is a poll of
- * the host's archive (hal_xprs_history), deduplicated by row id. */
+/* ── The scope room (XPRS 13.11): #LOCAL ──────────────────────────────────
+ * One built-in conversation carried as plain t:message broadcasts through the
+ * host's XPRS lane -- the same wires the ESP32 hotspot chat and every other
+ * station speak, so writing here is writing there. Sends carry scope:local:
+ * short-range bearers only, never gated to the internet. Receive is a poll of
+ * the host's archive (hal_xprs_history), deduplicated by row id.
+ *
+ * #GLOBAL is GONE. It was the unmarked room that went everywhere, and an
+ * unmarked broadcast is exactly what nothing can repair: no d:, so no custody,
+ * no ack, no retry -- one advert into a radio that transmits five seconds a
+ * minute. A message reached one phone and not another with nothing to fix it
+ * inside ten minutes. It also double-surfaced: a remote geochat frame is an
+ * unscoped undirected t:message, so it landed on the Live tab AND here.
+ *
+ * Undirected SENDING is untouched -- geochat needs it, it is the only class
+ * admitted past the host's declaration rule, and it is what catch-up fetches.
+ * What is gone is the room that showed it. */
 #define XROOM_LOCAL  "#LOCAL"
-#define XROOM_GLOBAL "#GLOBAL"
-static int xroom_is(const char *id) {
-  return s_eq(id, XROOM_LOCAL) || s_eq(id, XROOM_GLOBAL);
-}
+static int xroom_is(const char *id) { return s_eq(id, XROOM_LOCAL); }
 /* The ring MUST stay larger than XROOM_LIMIT below: the poll re-walks the same
  * window every four seconds, so a ring that cannot hold a whole window would
  * forget the oldest row just in time to re-add it as a new bubble. */
@@ -1786,13 +1793,10 @@ static void chanppl_load(void) {
 static void lxmf_title(const char *id, char *out, unsigned osz);
 static void convo_title(const char *id, char *out, unsigned osz) {
   if (s_pre(id, "lxmf:")) { lxmf_title(id, out, osz); return; }
-  /* The two scope rooms are not groups with a name and a reach tag -- they
-   * ARE the reach. "#GLOBAL (local)" was the old naming colliding with them:
-   * the tag below reads the '*' that marks a global GROUP, which a scope room
-   * does not carry, so the room that goes everywhere announced itself as
-   * local. Say what each one is instead. */
+  /* The scope room is not a group with a name and a reach tag -- it IS the
+   * reach. The tag below reads the '*' that marks a global GROUP, which a
+   * scope room does not carry, so say what this one is instead. */
   if (s_eq(id, XROOM_LOCAL))  { s_cpy(out, "Local chat", osz);  return; }
-  if (s_eq(id, XROOM_GLOBAL)) { s_cpy(out, "Global chat", osz); return; }
   if (id[0] != '#') { s_cpy(out, id, osz); return; }
   char name[8]; int j = 0;
   for (int i = 1; id[i] && id[i] != '*' && j < 6; i++) name[j++] = id[i];
@@ -3060,7 +3064,8 @@ static void convo_send_core(const char *buf, const char *id_in,
         char wire[300] = "t:reaction f:";
         s_cat(wire, g_call, sizeof(wire));
         s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
-        if (s_eq(id, XROOM_LOCAL)) s_cat(wire, " scope:local", sizeof(wire));
+        /* Unconditional: xroom_is() is #LOCAL and nothing else now. */
+        s_cat(wire, " scope:local", sizeof(wire));
         s_cat(wire, unlike ? " remove:like" : " add:like", sizeof(wire));
         s_cat(wire, " r:", sizeof(wire)); s_cat(wire, lmid, sizeof(wire));
         if (hal_xprs_send(wire, s_len(wire)) != 0) {
@@ -3093,7 +3098,7 @@ static void convo_send_core(const char *buf, const char *id_in,
     char wire[300] = "t:message f:";
     s_cat(wire, g_call, sizeof(wire));
     s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
-    if (s_eq(id, XROOM_LOCAL)) s_cat(wire, " scope:local", sizeof(wire));
+    s_cat(wire, " scope:local", sizeof(wire));   /* the only scope room left */
     if (parent[0]) { s_cat(wire, " r:", sizeof(wire)); s_cat(wire, parent, sizeof(wire)); }
     s_cat(wire, " m:", sizeof(wire)); s_cat(wire, text, sizeof(wire));
     if (s_len(wire) > 250) { notify("warning", "Message too long"); return; }
@@ -5260,8 +5265,15 @@ static void lxmf_drain(void) {
      * public hubs actually forward -- but it is machinery talking to
      * machinery, and a bubble reading "t:result f:X10G3D d:..." is spam in
      * somebody's conversation. The host files these into its own XPRS funnel;
-     * the chat only ever shows what a person wrote. */
-    if (s_pre(content, "t:")) continue;
+     * the chat only ever shows what a person wrote.
+     *
+     * The test was `s_pre(content, "t:")` and that is precisely how these kept
+     * arriving anyway: a sealed packet reaches us with `x:` leading --
+     * `x:<blob> t:message f:X3ARK d:X1VCVM ts:... n:2/3 sig:...` -- so the
+     * prefix test missed it and it became a bubble AND a notification, over
+     * and over. xprs_is_wire() asks whether the content is SHAPED like a
+     * packet instead of where its first field lands. */
+    if (xprs_is_wire(content)) continue;
     if (gseen_has(hash)) continue;
     gseen_add(hash);
 
@@ -5473,6 +5485,14 @@ static void groups_load(void) {
   int drop_defaults = 0;
   { char f[2];
     if (hal_kv_get("grpclean", 8, f, sizeof(f) - 1) == 0) drop_defaults = 1; }
+  /* One-time: forget #GLOBAL. Dropping convo_ensure(XROOM_GLOBAL) at startup
+   * is NOT enough on an existing install -- groups_save() persists every
+   * id with a leading '#', so the row is read back here and recreated on
+   * every launch. Its own KV flag, because a device that already ran
+   * grpclean would otherwise never do this one. */
+  int drop_global = 0;
+  { char f[2];
+    if (hal_kv_get("xglobal", 7, f, sizeof(f) - 1) == 0) drop_global = 1; }
   char id[40]; int j = 0;
   for (unsigned i = 0; i <= n; i++) {
     char ch = (i < n) ? buf[i] : ';';
@@ -5480,6 +5500,14 @@ static void groups_load(void) {
      * shows in the Messages list on every page open, not only the g/ filter. */
     if (ch == ';') {
       id[j] = 0;
+      if (drop_global && s_eq(id, "#GLOBAL")) {
+        char m[160] = "{\"type\":\"ui.convo.remove\",\"id\":\"";
+        jesc(m, sizeof(m), id);
+        s_cat(m, "\"}", sizeof(m));
+        hal_msg_send(m, s_len(m));
+        j = 0;
+        continue;                      /* not remembered -> dropped on save */
+      }
       if (drop_defaults && is_legacy_default_group(id)) {
         char m[160] = "{\"type\":\"ui.convo.remove\",\"id\":\"";
         jesc(m, sizeof(m), id);
@@ -5509,6 +5537,12 @@ static void groups_load(void) {
     groups_save();          /* persist the shorter list, once */
     hal_kv_set("grpclean", 8, "1", 1);
     const char *lg = "[chat] removed the legacy default #topic groups";
+    hal_log(1, lg, s_len(lg));
+  }
+  if (drop_global) {
+    groups_save();          /* persist the list without #GLOBAL, once */
+    hal_kv_set("xglobal", 7, "1", 1);
+    const char *lg = "[chat] removed the Global chat room";
     hal_log(1, lg, s_len(lg));
   }
   /* The NomadNet bridge channel is NOT pre-created any more: an empty row for
@@ -7239,6 +7273,11 @@ static void ble_handle(const char *compact, int rssi, const char *via) {
       g_msg_epoch = sent;
     }
   } else {
+    /* Not the compact frame either. A wire with no 0x1f separator would leave
+     * `seg` at 0 and copy the ENTIRE thing into from[16], then reach the Live
+     * feed as a bubble with no sender -- another way a raw packet lands on a
+     * screen. Anything packet-shaped stops here. */
+    if (xprs_is_wire(compact)) return;
     int seg = 0, fi = 0, ti = 0, xi = 0;
     for (const char *q = compact; *q; q++) {
       if (*q == BLE_SEP) { seg++; continue; }
@@ -7447,8 +7486,7 @@ void module_init(void) {
   pk_load();       /* restore known callsign -> pubkey map (for verification) */
   rns_dest_load(); /* restore npub -> {RNS delivery dests} (Reticulum addressing) */
   cpriv_load();    /* restore which 1:1 conversations are private (Reticulum-only) */
-  convo_ensure(XROOM_LOCAL);   /* the scope rooms exist before the first word */
-  convo_ensure(XROOM_GLOBAL);
+  convo_ensure(XROOM_LOCAL);   /* the scope room exists before the first word */
   /* Sweep out callsign-keyed ghost rows written by older builds: every id we
    * hold as a bare callsign is, by definition, not something this wapp can
    * render. Cheap, idempotent, and it heals a store the user is looking at. */
@@ -7582,7 +7620,7 @@ void module_tick(void) {
   }
 
   /* The scope rooms: poll the host's archive for t:message broadcasts and
-   * deliver the new ones into #LOCAL / #GLOBAL. Every four seconds, one
+   * deliver the new scope:local ones into #LOCAL. Every four seconds, one
    * bounded read -- the archive query is an indexed table on the host. */
   {
     static unsigned xroom_tick = 0;
@@ -7653,10 +7691,12 @@ void module_tick(void) {
                  * delivered by the host into its own conversation through the
                  * courier, whatever bearer carried it -- putting it in a room
                  * as well would show it twice under two different names. */
+                /* scope:local ONLY. Unscoped undirected traffic used to be
+                 * routed to #GLOBAL; with that room gone it is not ours to
+                 * show -- geochat already renders it on the Live tab. */
                 if (!to[0] && m && from[0] && !own && !xroom_seen(mid) &&
-                    !s_eq(from, g_call)) {
-                  const char *room = s_find(wire, " scope:local")
-                                         ? XROOM_LOCAL : XROOM_GLOBAL;
+                    !s_eq(from, g_call) && s_find(wire, " scope:local")) {
+                  const char *room = XROOM_LOCAL;
                   /* r: (before m:) is the reply target — a section-5 id the
                    * bubble it names also carries, so the host can thread. */
                   char parent[8] = "";
@@ -7666,6 +7706,17 @@ void module_tick(void) {
                     for (const char *p = r + 3; *p && *p != ' ' && k < 6; p++)
                       parent[k++] = *p;
                     parent[k] = 0;
+                  }
+                  /* `m:` is greedy to the end of the packet, so anything
+                   * the archive stored after it -- n:, sig:, via: -- would be
+                   * displayed as part of the sentence. Cut at the first such
+                   * field rather than showing the envelope to a person. */
+                  {
+                    char *b = (char *)(m + 3);
+                    for (char *q = b; *q; q++) {
+                      if (q[0] != ' ' || !q[1] || q[2] != ':') continue;
+                      if (q[1] == 'n' || q[1] == 's' || q[1] == 'v') { *q = 0; break; }
+                    }
                   }
                   convo_msg(room, "in", from, m + 3, "", "", 0, 0,
                             bearer[0] ? bearer : "XPRS",
@@ -7689,9 +7740,8 @@ void module_tick(void) {
                     for (const char *p = r + 3; *p && *p != ' ' && k < 6; p++)
                       tgt[k++] = *p;
                     tgt[k] = 0;
-                    const char *room = s_find(wire, " scope:local")
-                                           ? XROOM_LOCAL : XROOM_GLOBAL;
-                    if (tgt[0]) convo_react_of("", room, tgt, from, remove, 0);
+                    if (tgt[0] && s_find(wire, " scope:local"))
+                      convo_react_of("", XROOM_LOCAL, tgt, from, remove, 0);
                   }
                 }
               }

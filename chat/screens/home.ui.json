@@ -174,10 +174,10 @@
             "$": "field",
             "name": "chan_global",
             "$type": "bool",
-            "label": "Global chat (internet Reticulum)",
+            "label": "Worldwide groups (internet Reticulum)",
             "default": true,
             "apply": "chan_apply",
-            "tip": "Worldwide group channels relayed by internet Reticulum nodes. Off = the worldwide firehose disappears from the rail."
+            "tip": "Worldwide group channels (#NAME*) relayed by internet Reticulum nodes. Off = they leave the rail and stop counting as unread."
           },
           {
             "$": "field",

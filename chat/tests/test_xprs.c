@@ -185,6 +185,31 @@ WAPP_TEST(a_packet_with_no_clock_still_reads) {
    * still a message; only its time is unknown. */
   char f[16], to[24], tx[256];
   unsigned long long ts = 1;
+  /* xprs_is_wire: protocol must never reach a screen, wherever its fields sit.
+   * The prefix test xprs_looks_like() uses missed a sealed packet that arrives
+   * with `x:` leading, which is how raw wires became chat bubbles. */
+  WAPP_EXPECT_TRUE(xprs_is_wire(
+      "t:message f:X3ARK d:X1VCVM ts:2026-08-28_14:30:52 m:hello"));
+  WAPP_EXPECT_TRUE(xprs_is_wire(
+      "x:jREsSRrpqrL_2P3q t:message f:X3ARK d:X1VCVM n:2/3 sig:oo+lJV"));
+  WAPP_EXPECT_TRUE(xprs_is_wire("t:receipt f:X3ARK d:X1VCVM r:571e06 s:ack"));
+  /* …and a person's words are not a packet. */
+  WAPP_EXPECT_TRUE(!xprs_is_wire("hello, are you still at the harbour?"));
+  WAPP_EXPECT_TRUE(!xprs_is_wire("meet me at 5: the pub"));
+  WAPP_EXPECT_TRUE(!xprs_is_wire("the answer is n: 42"));
+  WAPP_EXPECT_TRUE(!xprs_is_wire("t:message"));           /* no sender */
+  WAPP_EXPECT_TRUE(!xprs_is_wire("t:banana f:X3ARK m:hi")); /* unknown type */
+  WAPP_EXPECT_TRUE(!xprs_is_wire(""));
+
+  /* The n: guard now sits above the type branches, so it covers an
+   * observation carrying n: too, not only t:message. */
+  {
+    char f[16], to[24], tx[256]; unsigned long long ts = 0;
+    WAPP_EXPECT_TRUE(!xprs_unpack(
+        "t:observation f:X1QZ3N pos:52.1,8.7 n:2/3",
+        f, sizeof(f), to, sizeof(to), tx, sizeof(tx), &ts));
+  }
+
   /* Section 6.6: a part of a split message is never displayed. Each part
    * carries the whole envelope, so without this every part of one message
    * became its own chat entry. */

@@ -175,6 +175,59 @@ int xprs_looks_like(const char *wire) {
   return wire && wire[0] == 't' && wire[1] == ':';
 }
 
+/* Every packet type the specification defines (section 4.2). The list is
+ * CLOSED: "An unknown type is ignored. It is never an error and is never
+ * displayed as a message." */
+static const char *const XPRS_TYPES[] = {
+  "message", "observation", "receipt", "reaction", "request", "identity",
+  "track", "sos", "info", "blog", "poll", "file", "report", "place", "status",
+  "passage", "event", "offer", "need", "channel", "mailbox", "service",
+  "command", "result", "moderate", "challenge", "response", "warning",
+  "ping", "pong", 0
+};
+
+/* Is [s] (a token, up to the next space) one of them? */
+static int x_known_type(const char *s) {
+  for (int i = 0; XPRS_TYPES[i]; i++) {
+    const char *a = s, *b = XPRS_TYPES[i];
+    while (*b && *a == *b) { a++; b++; }
+    if (!*b && (*a == 0 || *a == ' ')) return 1;
+  }
+  return 0;
+}
+
+/* Is [s] an XPRS protocol wire rather than something a person wrote?
+ *
+ * xprs_looks_like() only asks whether the wire STARTS with `t:`, and the whole
+ * garbage-in-the-chat problem was that the sender does not always put `t:`
+ * first: a sealed packet arrived as
+ *   x:<blob> t:message f:X3ARK d:X1VCVM ts:... n:2/3 sig:...
+ * which failed the prefix test in lxmf_drain and was rendered verbatim as a
+ * chat bubble, with a notification, hundreds of times.
+ *
+ * So ask the honest question: is the text SHAPED like a packet, wherever its
+ * fields sit. A wire always carries a type from the closed vocabulary and the
+ * callsign that sent it. `m:` is deliberately not required -- a sealed packet
+ * replaces it with `x:` (section 9.2).
+ *
+ * Prose does not collide with this: a colon in "meet me at 5: the pub" is not
+ * a `t:` token, and a person would have to type both a real type word and an
+ * `f:` callsign to be taken for a packet. */
+int xprs_is_wire(const char *s) {
+  if (!s || !s[0]) return 0;
+  int saw_type = 0, saw_from = 0;
+  for (const char *p = s; *p; ) {
+    if (p[0] && p[1] == ':') {
+      if (!saw_type && p[0] == 't') saw_type = x_known_type(p + 2);
+      else if (!saw_from && p[0] == 'f' && p[2] && p[2] != ' ') saw_from = 1;
+      if (saw_type && saw_from) return 1;
+    }
+    while (*p && *p != ' ') p++;
+    while (*p == ' ') p++;
+  }
+  return 0;
+}
+
 /* Copy the value of `key` into out. `m:` is greedy: it runs to the end of the
  * packet, spaces and colons included (section 4). Returns 1 when found. */
 static int x_field(const char *wire, const char *key, char *out, unsigned max) {
@@ -224,16 +277,6 @@ int xprs_unpack(const char *wire, char *from, unsigned fmax, char *to,
   char m[512] = "";
   x_field(wire, "m", m, sizeof(m));
 
-  if (type[0] == 'o') {                       /* observation */
-    char pos[64] = "";
-    if (!x_field(wire, "pos", pos, sizeof(pos))) return 0;   /* nothing to show */
-    x_cpy(to, "!", tmax);
-    x_cpy(text, pos, xmax);
-    if (m[0]) { x_cat(text, ",", xmax); x_cat(text, m, xmax); }
-    return 1;
-  }
-  if (type[0] != 'm') return 0;               /* message; anything else is not ours */
-
   /* Section 6.6: "A partial message is never displayed."
    *
    * A long message is split into up to nine parts, each carrying `n:i/total`
@@ -249,6 +292,16 @@ int xprs_unpack(const char *wire, char *from, unsigned fmax, char *to,
     char part[8] = "";
     if (x_field(wire, "n", part, sizeof(part))) return 0;
   }
+
+  if (type[0] == 'o') {                       /* observation */
+    char pos[64] = "";
+    if (!x_field(wire, "pos", pos, sizeof(pos))) return 0;   /* nothing to show */
+    x_cpy(to, "!", tmax);
+    x_cpy(text, pos, xmax);
+    if (m[0]) { x_cat(text, ",", xmax); x_cat(text, m, xmax); }
+    return 1;
+  }
+  if (type[0] != 'm') return 0;               /* message; anything else is not ours */
 
   char d[32] = "";
   if (x_field(wire, "d", d, sizeof(d)) && d[0]) {

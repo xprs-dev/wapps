@@ -34,6 +34,12 @@ unsigned xprs_pack(char *out, unsigned max, const char *from, const char *to,
 /* Is [wire] an XPRS packet? Cheap prefix test — every packet starts `t:`. */
 int xprs_looks_like(const char *wire);
 
+/* Is [s] an XPRS protocol wire rather than a person's words? Unlike
+ * xprs_looks_like() this does not care which field comes first — a sealed
+ * packet can arrive with `x:` leading, and rendering one of those as a chat
+ * bubble is the bug this exists to stop. */
+int xprs_is_wire(const char *s);
+
 /* Read an XPRS packet back into chat's (from, to, text). Returns 0 when the
  * packet is not one chat can show (unknown type, no sender). [ts_out] receives
  * the SENDER's timestamp as an epoch, or 0 when the packet carried none —
