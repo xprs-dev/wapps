@@ -1909,8 +1909,18 @@ static void convo_title(const char *id, char *out, unsigned osz) {
   /* A group carries its own name; the "(local)/(global)" reach tag below is
    * about a NOSTR group's scope and says nothing true about a closed one. */
   if (xgroup_is(id)) {
+    /* Name AND callsign, always. The name is a label anybody can choose and
+     * two groups may pick the same one; the X5 callsign is derived from the
+     * key and is the only half that identifies the group (26.1). Showing the
+     * name alone would let a second "lisboa-net" pass for this one. */
     int i = xgroup_find(xgroup_call(id));
-    if (i >= 0 && g_xgroup[i].nick[0]) { s_cpy(out, g_xgroup[i].nick, osz); return; }
+    if (i >= 0 && g_xgroup[i].nick[0]) {
+      s_cpy(out, g_xgroup[i].nick, osz);
+      s_cat(out, " (", osz);
+      s_cat(out, xgroup_call(id), osz);
+      s_cat(out, ")", osz);
+      return;
+    }
     s_cpy(out, xgroup_call(id), osz);
     return;
   }
@@ -2094,7 +2104,9 @@ static void convo_touch(const char *id, const char *preview, int select) {
   const char *icon = (id[0] == '#') ? (global ? "public" : "campaign") : "person";
   char badge[24] = "";
   if (id[0] != '#') distance_badge(id, badge, sizeof(badge));
-  char title[24]; convo_title(id, title, sizeof(title));
+  /* Wide enough for "name (X5ABCD)": a group title carries both, and 24
+   * cut the callsign off exactly where it stopped being useful. */
+  char title[48]; convo_title(id, title, sizeof(title));
   char m[600] = "{\"type\":\"ui.convo.upsert\",\"id\":\"";
   jesc(m, sizeof(m), id);
   s_cat(m, "\",\"title\":\"", sizeof(m)); jesc(m, sizeof(m), title);
@@ -5585,7 +5597,9 @@ static void convo_ensure(const char *id) {
   convo_remember(id);
   int global = 0; for (int i = 1; id[i]; i++) if (id[i] == '*') global = 1;
   const char *icon = (id[0] == '#') ? (global ? "public" : "campaign") : "person";
-  char title[24]; convo_title(id, title, sizeof(title));
+  /* Wide enough for "name (X5ABCD)": a group title carries both, and 24
+   * cut the callsign off exactly where it stopped being useful. */
+  char title[48]; convo_title(id, title, sizeof(title));
   char m[300] = "{\"type\":\"ui.convo.upsert\",\"id\":\"";
   jesc(m, sizeof(m), id);
   s_cat(m, "\",\"title\":\"", sizeof(m)); jesc(m, sizeof(m), title);
