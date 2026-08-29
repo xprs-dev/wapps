@@ -1,6 +1,6 @@
 {
   "id": "tools.xprs.chat",
-  "version": "0.4.65",
+  "version": "0.4.66",
   "kind": "app",
   "title": "Chat",
   "description": "Chat - encrypted messaging, live map and beacons over Reticulum, Bluetooth mesh and NOSTR relays (legacy APRS-IS optional).",

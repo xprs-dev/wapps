@@ -1148,6 +1148,45 @@ static int g_convo_n = 0;
  * What is gone is the room that showed it. */
 #define XROOM_LOCAL  "#LOCAL"
 static int xroom_is(const char *id) { return s_eq(id, XROOM_LOCAL); }
+
+/* ── Closed groups (XPRS 26) as conversations ─────────────────────────────
+ *
+ * A group IS a room. Its id here is "#" + the group's X5 callsign, so it is a
+ * group to every predicate in this file already (is_group, convo_renderable,
+ * convo_touch) and needs no new kind of conversation.
+ *
+ * The host owns the answer to "which groups, and what am I in them": section
+ * 26.4 replays signed acts against a callsign->key map that lives in the core.
+ * hal_xprs_groups hands that over; this wapp never decides membership, it only
+ * renders it and refuses to compose where it has no standing. */
+#define XGROUP_MAX 16
+static struct {
+  char call[8];   /* X5ABCD */
+  char nick[24];
+  char role[8];   /* admin | mod | member | invited | none */
+} g_xgroup[XGROUP_MAX];
+static int g_xgroup_n;
+
+/* "#X5ABCD" — '#' plus a six-character X5 callsign. */
+static int xgroup_is(const char *id) {
+  return id && id[0] == '#' && id[1] == 'X' && id[2] == '5' && s_len(id) == 7;
+}
+static const char *xgroup_call(const char *id) { return id + 1; }
+
+static int xgroup_find(const char *call) {
+  for (int i = 0; i < g_xgroup_n; i++)
+    if (s_eq(g_xgroup[i].call, call)) return i;
+  return -1;
+}
+
+/* 26.3.1: a grant confers nothing until the person accepts it, so `invited` is
+ * somebody who has been asked and has not answered — they may not post. */
+static int xgroup_may_post(const char *call) {
+  int i = xgroup_find(call);
+  if (i < 0) return 0;
+  return s_eq(g_xgroup[i].role, "member") || s_eq(g_xgroup[i].role, "mod") ||
+         s_eq(g_xgroup[i].role, "admin");
+}
 /* The ring MUST stay larger than XROOM_LIMIT below: the poll re-walks the same
  * window every four seconds, so a ring that cannot hold a whole window would
  * forget the oldest row just in time to re-add it as a new bubble. */
@@ -1797,6 +1836,14 @@ static void convo_title(const char *id, char *out, unsigned osz) {
    * reach. The tag below reads the '*' that marks a global GROUP, which a
    * scope room does not carry, so say what this one is instead. */
   if (s_eq(id, XROOM_LOCAL))  { s_cpy(out, "Local chat", osz);  return; }
+  /* A group carries its own name; the "(local)/(global)" reach tag below is
+   * about a NOSTR group's scope and says nothing true about a closed one. */
+  if (xgroup_is(id)) {
+    int i = xgroup_find(xgroup_call(id));
+    if (i >= 0 && g_xgroup[i].nick[0]) { s_cpy(out, g_xgroup[i].nick, osz); return; }
+    s_cpy(out, xgroup_call(id), osz);
+    return;
+  }
   if (id[0] != '#') { s_cpy(out, id, osz); return; }
   char name[8]; int j = 0;
   for (int i = 1; id[i] && id[i] != '*' && j < 6; i++) name[j++] = id[i];
@@ -3051,6 +3098,55 @@ static void convo_send_core(const char *buf, const char *id_in,
   /* The scope rooms speak raw XPRS through the host: one t:message
    * broadcast, scope:local for #LOCAL, signed and aired by hal_xprs_send.
    * Everyone on the bearers -- the ESP32 hotspot page included -- hears it. */
+  /* A closed group (26): an ordinary t:message addressed to the GROUP. The
+   * group callsign in d: is what makes it a group post; there is no separate
+   * "group message" packet, which is what lets any station archive and replay
+   * one without understanding groups at all. */
+  if (xgroup_is(id)) {
+    const char *call = xgroup_call(id);
+    if (!xgroup_may_post(call)) {
+      notify("warning",
+             "You can post here once you accept the invitation");
+      return;
+    }
+    char ts[24];
+    xprs_stamp(ts, sizeof(ts), hal_time_epoch());
+    char parent[8] = "";
+    if (text[0] == '+' && s_len(text) > 8 && text[7] == ' ') {
+      int hex = 1;
+      for (int i = 1; i <= 6; i++) {
+        char c = text[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) { hex = 0; break; }
+      }
+      if (hex) {
+        for (int i = 0; i < 6; i++) parent[i] = text[1 + i];
+        parent[6] = 0;
+        unsigned k = 0, n = 8;
+        while (text[n]) text[k++] = text[n++];
+        text[k] = 0;
+        if (!text[0]) return;
+      }
+    }
+    char wire[300] = "t:message f:";
+    s_cat(wire, g_call, sizeof(wire));
+    s_cat(wire, " d:", sizeof(wire)); s_cat(wire, call, sizeof(wire));
+    s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
+    if (parent[0]) { s_cat(wire, " r:", sizeof(wire)); s_cat(wire, parent, sizeof(wire)); }
+    s_cat(wire, " m:", sizeof(wire)); s_cat(wire, text, sizeof(wire));
+    if (s_len(wire) > 250) { notify("warning", "Message too long"); return; }
+    if (hal_xprs_send(wire, s_len(wire)) != 0) {
+      notify("warning", "Could not send");
+      return;
+    }
+    /* Same reasoning as the scope room: the host signs AFTER us and the
+     * section 5 id is computed with sig: removed, so these bytes are the id. */
+    char gmid[7];
+    xprs_id(wire, s_len(wire), gmid);
+    xroom_seen(gmid);
+    convo_msg(id, "out", g_call, text, "", "", 0, 0, "XPRS",
+              gmid, parent, "verified", 0, 0);
+    return;
+  }
   if (xroom_is(id)) {
     char ts[24];
     xprs_stamp(ts, sizeof(ts), hal_time_epoch());
@@ -7619,6 +7715,63 @@ void module_tick(void) {
     }
   }
 
+  /* Closed groups (26): refresh what the host says we belong to, and make a
+   * room for each one we may actually speak in.
+   *
+   * Every 30s with a UI attached, never otherwise. Membership changes when a
+   * signed act arrives, which is rare -- this is not a hot path, and asking
+   * more often would be work per tick to learn that nothing moved. */
+  {
+    static unsigned xg_tick = 0;
+    if (hal_ui_attached() && (xg_tick++ % 30) == 0) {
+      static char gb[4096];
+      int n = hal_xprs_groups(gb, sizeof(gb) - 1);
+      if (n > 0 && n < (int)sizeof(gb)) {
+        gb[n] = 0;
+        g_xgroup_n = 0;
+        int depth = 0, instr = 0, esc = 0, start = -1;
+        for (int i = 0; gb[i]; i++) {
+          char ch = gb[i];
+          if (esc) { esc = 0; continue; }
+          if (ch == '\\') { esc = 1; continue; }
+          if (ch == '"') { instr = !instr; continue; }
+          if (instr) continue;
+          if (ch == '{') { if (depth == 0) start = i; depth++; }
+          else if (ch == '}') {
+            depth--;
+            if (depth == 0 && start >= 0) {
+              char save = gb[i + 1];
+              gb[i + 1] = 0;
+              const char *obj = gb + start;
+              if (g_xgroup_n < XGROUP_MAX) {
+                int k = g_xgroup_n;
+                g_xgroup[k].call[0] = g_xgroup[k].nick[0] = 0;
+                g_xgroup[k].role[0] = 0;
+                jstr(obj, "call", g_xgroup[k].call, sizeof(g_xgroup[k].call));
+                jstr(obj, "nick", g_xgroup[k].nick, sizeof(g_xgroup[k].nick));
+                jstr(obj, "role", g_xgroup[k].role, sizeof(g_xgroup[k].role));
+                if (g_xgroup[k].call[0]) g_xgroup_n++;
+              }
+              gb[i + 1] = save;
+              start = -1;
+            }
+          }
+        }
+        /* A room only for a group we may speak in. Being INVITED is not
+         * membership (26.3.1) and a room you cannot post in, for a group you
+         * have not joined, would be the invitation shown as a fait accompli.
+         * The invitation itself lives in Settings -> Groups, where accepting
+         * it is a signed act by the person. */
+        for (int k = 0; k < g_xgroup_n; k++) {
+          if (!xgroup_may_post(g_xgroup[k].call)) continue;
+          char rid[10] = "#";
+          s_cat(rid, g_xgroup[k].call, sizeof(rid));
+          convo_ensure(rid);
+        }
+      }
+    }
+  }
+
   /* The scope rooms: poll the host's archive for t:message broadcasts and
    * deliver the new scope:local ones into #LOCAL. Every four seconds, one
    * bounded read -- the archive query is an indexed table on the host. */
@@ -7694,9 +7847,19 @@ void module_tick(void) {
                 /* scope:local ONLY. Unscoped undirected traffic used to be
                  * routed to #GLOBAL; with that room gone it is not ours to
                  * show -- geochat already renders it on the Live tab. */
-                if (!to[0] && m && from[0] && !own && !xroom_seen(mid) &&
-                    !s_eq(from, g_call) && s_find(wire, " scope:local")) {
-                  const char *room = XROOM_LOCAL;
+                /* Addressed to a closed group we are in: the group's room.
+                 * The host keeps these because the group is ours, and the
+                 * courier does not deliver them as 1:1 — d: is the GROUP, not
+                 * a person, so there is no other conversation they belong to. */
+                char groom[10] = "";
+                if (to[0] == 'X' && to[1] == '5' && xgroup_find(to) >= 0) {
+                  s_cpy(groom, "#", sizeof(groom));
+                  s_cat(groom, to, sizeof(groom));
+                }
+                if ((groom[0] || !to[0]) && m && from[0] && !own &&
+                    !xroom_seen(mid) && !s_eq(from, g_call) &&
+                    (groom[0] || s_find(wire, " scope:local"))) {
+                  const char *room = groom[0] ? groom : XROOM_LOCAL;
                   /* r: (before m:) is the reply target — a section-5 id the
                    * bubble it names also carries, so the host can thread. */
                   char parent[8] = "";

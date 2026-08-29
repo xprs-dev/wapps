@@ -1455,6 +1455,19 @@ __attribute__((import_module("hal"), import_name("xprs_history")))
 int32_t hal_xprs_history(const char *query, uint32_t query_len,
                          char *out, uint32_t out_cap);
 
+/* The closed groups (section 26) this station knows, and what WE are in each.
+ * A wapp cannot work this out for itself: the answer is a replay of signed
+ * acts against a callsign->key map the host owns. Reply:
+ *   [{call,nick,role,admin,members,candidates,verified}]
+ * `role` is admin|mod|member|invited|none. Only member, mod and admin may
+ * post — 26.3.1 says a grant confers nothing until the person accepts it, so
+ * `invited` is somebody who has been ASKED and has not answered. `verified`
+ * is false when the group's announcement has not arrived, in which case 26.7
+ * says fail open: show the record and say it could not be checked.
+ * Returns bytes written, negated size if out is small. */
+__attribute__((import_module("hal"), import_name("xprs_groups")))
+int32_t hal_xprs_groups(char *out, uint32_t out_cap);
+
 /* Set a spool tunable "key=value": archive (0/1), archiveMaxMb,
  * archiveMaxDays, serveHistory (0/1 — answer cmd:history and say
  * serve:history in the beacon). 0 ok, -1 unknown key or bad value. */
