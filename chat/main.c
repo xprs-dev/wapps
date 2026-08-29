@@ -7883,22 +7883,35 @@ void module_tick(void) {
      * message appears on a screen nobody is watching. */
     const unsigned every = hal_ui_attached() ? 4u : 60u;
     if ((++xroom_tick % every) == 0) {
-      /* 48 rows x ~360 B measured on a live archive = ~17 KB. The buffer must
+      /* 48 rows x ~410 B measured on a live archive = ~20 KB. The buffer must
        * lead the window: hal_xprs_history returns a NEGATIVE length when the
        * answer does not fit, this loop only runs for n > 0, and the room would
        * then stop updating with no error anywhere. Change one, change both. */
       static char rows[24576];
-      /* Only the conversation types: observation/identity/service chatter
-       * outnumbers messages and would eat the window whole.
+      /* Ask for the rows the rooms can RENDER, not the newest N of everything.
        *
-       * The window is deliberately much wider than a screenful. Rows come back
-       * newest-first by the packet's OWN timestamp, and a message replayed out
-       * of a station's archive carries the author's original ts -- which is old
-       * by definition. With the twelve rows this used to ask for, anything a
-       * station handed us was below the fold on any channel with recent
-       * traffic, so held mail was fetched, archived, and never displayed. */
-      static const char XQ[] =
-          "{\"limit\":48,\"types\":[\"message\",\"reaction\"]}";
+       * The type filter alone was a lottery. This loop keeps only rows that
+       * are undirected (scope:local) or addressed to a group we are in — and
+       * "the newest 48 messages" is whatever the station happens to be doing.
+       * Measured on the C61 mid store-and-forward: the newest 48 message rows
+       * were ALL its own custody re-airs to one absent peer (343 of the
+       * newest 371, five minutes' worth), so the window held zero renderable
+       * rows and a group post sat unrendered in the archive for an hour.
+       *
+       * So the query names its destinations: "" is the undirected traffic
+       * #LOCAL reads, plus each closed group we may speak in. 48 rows then
+       * means 48 usable rows, off an indexed walk, and the flood cannot
+       * push a room's traffic below the fold however loud it gets. */
+      static char XQ[360];
+      s_cpy(XQ, "{\"limit\":48,\"types\":[\"message\",\"reaction\"],"
+                "\"to\":[\"\"", sizeof(XQ));
+      for (int k = 0; k < g_xgroup_n; k++) {
+        if (!xgroup_may_post(g_xgroup[k].call)) continue;
+        s_cat(XQ, ",\"", sizeof(XQ));
+        s_cat(XQ, g_xgroup[k].call, sizeof(XQ));
+        s_cat(XQ, "\"", sizeof(XQ));
+      }
+      s_cat(XQ, "]}", sizeof(XQ));
       int n = hal_xprs_history(XQ, s_len(XQ), rows, sizeof(rows) - 1);
       if (n > 0 && n < (int)sizeof(rows)) {
         rows[n] = 0;

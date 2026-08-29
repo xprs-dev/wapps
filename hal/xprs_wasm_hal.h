@@ -1445,9 +1445,13 @@ int32_t hal_xprs_send(const char *wire, uint32_t wire_len);
 /* The persistent spool of heard XPRS packets (section 24 serve:history) —
  * everything this station archived, past the traffic ring's 200 entries and
  * across restarts. [query] is a JSON filter, "{}" for the latest:
- *   {"since":"YYYY-MM-DD_hh:mm:ss","until":"...","only":"CALL","limit":n}
+ *   {"since":"YYYY-MM-DD_hh:mm:ss","until":"...","only":"CALL","limit":n,
+ *    "to":["","X5A3F2"]}
  * since/until window on the packet's own ts:, only matches sender OR
- * addressee. Reply, newest first:
+ * addressee. "to" keeps only the named destinations — "" means undirected —
+ * so a room can ask for the rows it renders instead of sieving the newest N:
+ * on a station mid store-and-forward the newest N are its own custody
+ * re-airs, and a sieving caller's window carries nothing it can use. Reply, newest first:
  *   [{ts,heardTs,bearer,rssi,from,to,type,id,mine,own,sig,heard,wire}]
  * `sig` is verified|forged|unverified|unsigned; `heard` counts collapsed
  * duplicate sightings. Returns bytes written, negated size if out is small. */
