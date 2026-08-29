@@ -1149,6 +1149,10 @@ static int g_convo_n = 0;
 #define XROOM_LOCAL  "#LOCAL"
 static int xroom_is(const char *id) { return s_eq(id, XROOM_LOCAL); }
 
+static void xgroup_serialise(char *out, unsigned cap);
+static void xgroups_publish(void);
+static void convo_ensure(const char *id);   /* defined further down */
+
 /* ── Closed groups (XPRS 26) as conversations ─────────────────────────────
  *
  * A group IS a room. Its id here is "#" + the group's X5 callsign, so it is a
@@ -1166,6 +1170,18 @@ static struct {
   char role[8];   /* admin | mod | member | invited | none */
 } g_xgroup[XGROUP_MAX];
 static int g_xgroup_n;
+
+/* The list as it was last time, so a room is on screen the instant the page
+ * opens instead of a few seconds later.
+ *
+ * Membership is the host's answer and it takes a HAL round trip; asking for it
+ * before drawing anything is what made the rooms rail arrive late and reflow
+ * under the reader's eyes. So: paint from KV at init, ask in the background,
+ * and only touch the host again when the answer actually changed. The cache
+ * being briefly stale is harmless -- the worst case is a room that appears for
+ * a few seconds after you were removed, and the post path asks the live table,
+ * never this one. */
+static char g_xgroup_kv[640];   /* "CALL|nick|role;" repeated; what we last saw */
 
 /* "#X5ABCD" — '#' plus a six-character X5 callsign. */
 static int xgroup_is(const char *id) {
@@ -1186,6 +1202,60 @@ static int xgroup_may_post(const char *call) {
   if (i < 0) return 0;
   return s_eq(g_xgroup[i].role, "member") || s_eq(g_xgroup[i].role, "mod") ||
          s_eq(g_xgroup[i].role, "admin");
+}
+
+/* The table as one line, so "did anything change?" is a string compare rather
+ * than a rescan -- and so the same bytes are what we persist. */
+static void xgroup_serialise(char *out, unsigned cap) {
+  out[0] = 0;
+  for (int i = 0; i < g_xgroup_n; i++) {
+    s_cat(out, g_xgroup[i].call, cap); s_cat(out, "|", cap);
+    s_cat(out, g_xgroup[i].nick, cap); s_cat(out, "|", cap);
+    s_cat(out, g_xgroup[i].role, cap); s_cat(out, ";", cap);
+  }
+}
+
+/* Rebuild the table from one of those lines. */
+static void xgroup_parse(const char *in) {
+  g_xgroup_n = 0;
+  int f = 0, k = 0;
+  char call[8] = "", nick[24] = "", role[8] = "";
+  for (const char *p = in; *p; p++) {
+    if (*p == '|') { f++; k = 0; continue; }
+    if (*p == ';') {
+      if (call[0] && g_xgroup_n < XGROUP_MAX) {
+        s_cpy(g_xgroup[g_xgroup_n].call, call, sizeof(g_xgroup[0].call));
+        s_cpy(g_xgroup[g_xgroup_n].nick, nick, sizeof(g_xgroup[0].nick));
+        s_cpy(g_xgroup[g_xgroup_n].role, role, sizeof(g_xgroup[0].role));
+        g_xgroup_n++;
+      }
+      call[0] = nick[0] = role[0] = 0;
+      f = 0; k = 0;
+      continue;
+    }
+    if (f == 0) { if (k < (int)sizeof(call) - 1)  { call[k++] = *p; call[k] = 0; } }
+    else if (f == 1) { if (k < (int)sizeof(nick) - 1) { nick[k++] = *p; nick[k] = 0; } }
+    else if (f == 2) { if (k < (int)sizeof(role) - 1) { role[k++] = *p; role[k] = 0; } }
+  }
+}
+
+/* Put a row on screen for every group we may speak in. */
+static void xgroups_publish(void) {
+  for (int k = 0; k < g_xgroup_n; k++) {
+    if (!xgroup_may_post(g_xgroup[k].call)) continue;
+    char rid[10] = "#";
+    s_cat(rid, g_xgroup[k].call, sizeof(rid));
+    convo_ensure(rid);
+  }
+}
+
+/* Draw from the last known answer, before asking for a new one. */
+static void xgroups_restore(void) {
+  uint32_t n = hal_kv_get("xgrp", 4, g_xgroup_kv, sizeof(g_xgroup_kv) - 1);
+  if (n == 0 || n >= sizeof(g_xgroup_kv)) { g_xgroup_kv[0] = 0; return; }
+  g_xgroup_kv[n] = 0;
+  xgroup_parse(g_xgroup_kv);
+  xgroups_publish();
 }
 /* The ring MUST stay larger than XROOM_LIMIT below: the poll re-walks the same
  * window every four seconds, so a ring that cannot hold a whole window would
@@ -7573,6 +7643,7 @@ void module_init(void) {
   chanppl_load();  /* distinct senders seen per channel, for the people count */
   near_load();     /* who was within reach before this launch (greyed, kept) */
   groups_load();   /* restore subscribed groups so the g/ filter is correct now */
+  xgroups_restore(); /* closed-group rooms from cache, before asking the host */
   /* Cache our public key (base64url) and the persisted pubkey-beacon pref. */
   { uint32_t pn = hal_identity_pubkey(g_pubkey, sizeof(g_pubkey) - 1);
     if (pn < sizeof(g_pubkey)) g_pubkey[pn] = 0; else g_pubkey[0] = 0; }
@@ -7757,16 +7828,26 @@ void module_tick(void) {
             }
           }
         }
-        /* A room only for a group we may speak in. Being INVITED is not
+        /* Nothing further unless the answer moved.
+         *
+         * Membership changes when a signed act arrives, which is rare, so this
+         * poll's normal outcome is "the same as last time". Re-upserting every
+         * row every 30s would be a message per group per poll, forever, to
+         * tell the host what it already knows -- the shape performance.md 8.7
+         * calls a question re-asked after the answer stopped changing. One
+         * string compare decides it.
+         *
+         * A room only for a group we may speak in. Being INVITED is not
          * membership (26.3.1) and a room you cannot post in, for a group you
          * have not joined, would be the invitation shown as a fait accompli.
          * The invitation itself lives in Settings -> Groups, where accepting
          * it is a signed act by the person. */
-        for (int k = 0; k < g_xgroup_n; k++) {
-          if (!xgroup_may_post(g_xgroup[k].call)) continue;
-          char rid[10] = "#";
-          s_cat(rid, g_xgroup[k].call, sizeof(rid));
-          convo_ensure(rid);
+        char now[sizeof(g_xgroup_kv)];
+        xgroup_serialise(now, sizeof(now));
+        if (!s_eq(now, g_xgroup_kv)) {
+          s_cpy(g_xgroup_kv, now, sizeof(g_xgroup_kv));
+          hal_kv_set("xgrp", 4, g_xgroup_kv, s_len(g_xgroup_kv));
+          xgroups_publish();
         }
       }
     }
