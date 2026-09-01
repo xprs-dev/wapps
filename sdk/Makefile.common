@@ -10,10 +10,20 @@
 # Set MODULE_NAME and MODULE_SRCS in your Makefile, then include
 # this file.
 #
-# Requires: WASI_SDK_PATH environment variable pointing to wasi-sdk
-#   e.g. export WASI_SDK_PATH=/opt/wasi-sdk
+# Requires: WASI_SDK_PATH environment variable pointing to wasi-sdk.
+#
+# When it is not set, look where install-wasi-sdk.sh actually puts it
+# (~/wasi-sdk) before falling back to the system-wide /opt. Defaulting to
+# /opt alone meant `make` from inside a wapp directory died with
+#
+#   make: /opt/wasi-sdk/bin/clang: No such file or directory
+#
+# on a machine where the SDK was installed and working -- the top-level
+# Makefile and build-all.sh both set $(HOME)/wasi-sdk, so only this path was
+# wrong. It reads like a missing toolchain rather than a missing variable,
+# which is a long way to send somebody for a default.
 
-WASI_SDK_PATH ?= /opt/wasi-sdk
+WASI_SDK_PATH ?= $(firstword $(wildcard $(HOME)/wasi-sdk /opt/wasi-sdk) /opt/wasi-sdk)
 CC := $(WASI_SDK_PATH)/bin/clang
 HAL_DIR := $(dir $(lastword $(MAKEFILE_LIST)))../hal
 
