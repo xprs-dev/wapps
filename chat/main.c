@@ -1,15 +1,37 @@
 /*
- * APRS station wapp — Map / Messenger / Beacon / Settings.
+ * chat — conversations, and nothing else.
  *
- * Mirrors the mature XPRS APRS UI on top of XPRS primitives:
- *  - Map      : pins for stations/messages received in the filter area
- *               (host renders ui.map.marker pushed from parsed packets)
- *  - Messenger: chat view of APRS text messages addressed to us
- *  - Beacon   : craft a position / status / emergency / timed beacon
- *  - Settings : callsign, position, network, filter, path, tags
+ * A 1:1 with a station, an open group (XPRS.md 6.3), a closed group (26).
+ * Threading, blocking, muting, read receipts, the tick on a bubble.
  *
- * Networking is the reusable aprs.{h,c} library over the hal_socket_*
- * HAL. The APRS-IS passcode is computed (aprs_passcode) so we can TX.
+ * ── THIS WAPP OWNS NO TRANSPORT ─────────────────────────────────────────
+ *
+ * It does not read a radio, open a socket, name a Reticulum destination, or
+ * put a byte on the air. It says what it wants said and to whom:
+ *
+ *     hal_xprs_message(to, text, private, &id)   a 1:1
+ *     hal_xprs_send(wire)                        a composed packet
+ *     hal_xprs_read(id)                          a person opened a message
+ *
+ * and the core composes, seals (9.2), signs (9.1), splits (6.6), ranks the
+ * bearers (36.0), parks a custody copy and reports back. What arrives comes on
+ * the event bus, already reassembled, unsealed, verified and deduped, and only
+ * for the packet types this wapp subscribed to.
+ *
+ * It used to do all of it itself, and the list is worth keeping because every
+ * item was a bug waiting: a raw BLE scan with the advertiser's address and
+ * RSSI; adverts under a subtype the core had to GUESS from their content; a
+ * digipeater re-airing other stations' frames with no `via:` and no hop
+ * budget; frames aired under callsigns that were not this station's; an
+ * APRS-IS socket; two NOSTR subscriptions; a Reticulum destination named
+ * directly; a private ENC1 encryption format and a `~<sig>` signature scheme
+ * layered inside `m:`, beside the seal and signature the core had already
+ * done; an `am:` correlation token competing with 5's identifier; and a
+ * `?PING`/`?PONG` reachability dialect the core now answers itself.
+ *
+ * There is no clock. module_tick is empty and the interval is 0: everything
+ * here starts with something happening — a packet from the core, or a person
+ * typing.
  */
 #include <stdint.h>
 #include "xprs_wasm_hal.h"
@@ -254,7 +276,6 @@ static int   g_radius = 100;
 static char  g_symbol[8] = "/>";
 static char  g_path[64] = "WIDE1-1,WIDE2-1";
 static int   g_interval = 600;          /* seconds */
-static int   g_mail_days = 7;           /* ?MAIL look-back window sent to iGates */
 static int g_chan_local = 1, g_chan_global = 1, g_chan_nomad = 1;
 static void chan_save(void) {
   char b[4] = { g_chan_local ? '1' : '0', g_chan_global ? '1' : '0',
@@ -335,8 +356,6 @@ static void pk_render(void);              /* fwd: refresh the Keys list view */
  * feed group so followers see them too. */
 #define FOLLOW_MAX 32
 #define FEED_GROUP  "FEED"                 /* shared micro-blog group for posts */
-static char g_follow[FOLLOW_MAX][16];
-static int  g_follow_n = 0;
 /* Stations that follow US — learned from directed "?FOLLOW"/"?UNFOLLOW"
  * control messages peers send when they (un)follow a callsign. */
 static void profile_show(const char *call);   /* fwd: station profile sheet */
@@ -453,7 +472,6 @@ static void read_config(const char *buf) {
   if (jstr(buf, "symbol", v, sizeof(v)) && s_len(v) >= 2) s_cpy(g_symbol, v, sizeof(g_symbol));
   if (jstr(buf, "path", v, sizeof(v))) s_cpy(g_path, v, sizeof(g_path));
   if (jstr(buf, "beacon_interval", v, sizeof(v)) && v[0]) g_interval = to_int(v);
-  if (jstr(buf, "mail_days", v, sizeof(v)) && v[0]) { g_mail_days = to_int(v); if (g_mail_days < 1) g_mail_days = 1; }
   /* NOTE: BLE on/off is intentionally NOT read here. read_config runs on
    * every command (connect, sends, …) and the host serialises an unset
    * checkbox as false, which would clobber the on-by-default state before the
@@ -526,44 +544,6 @@ static void seen_add(unsigned h) {
     if (g_seen[i].t < g_seen[oldest].t) oldest = i;
   }
   g_seen[oldest].h = h; g_seen[oldest].t = now;   /* all fresh: drop oldest */
-}
-
-/* Persistent dedup ring for relay-backed messages. The per-message id (rmid,
- * embedded in the encrypted plaintext) is remembered ACROSS restarts so a relay
- * copy fetched after the directly-delivered copy — possibly in a later session,
- * after the in-memory g_seen ring was lost — doesn't show twice. Stored as a
- * space-joined ring in KV "midseen". */
-#define MIDSEEN_MAX 128
-static char g_midseen[MIDSEEN_MAX][12];
-static int g_midseen_n = 0;     /* entries in use (<= MIDSEEN_MAX) */
-static int g_midseen_head = 0;  /* ring write cursor once full */
-static int midseen_has(const char *m) {
-  if (!m[0]) return 0;
-  for (int i = 0; i < g_midseen_n; i++) if (s_eq(g_midseen[i], m)) return 1;
-  return 0;
-}
-static void midseen_save(void) {
-  char b[MIDSEEN_MAX * 12]; b[0] = 0;
-  for (int i = 0; i < g_midseen_n; i++) { s_cat(b, g_midseen[i], sizeof(b)); s_cat(b, " ", sizeof(b)); }
-  hal_kv_set("midseen", 7, b, s_len(b));
-}
-static void midseen_add(const char *m) {
-  if (!m[0] || midseen_has(m)) return;
-  if (g_midseen_n < MIDSEEN_MAX) s_cpy(g_midseen[g_midseen_n++], m, 12);
-  else { s_cpy(g_midseen[g_midseen_head], m, 12); g_midseen_head = (g_midseen_head + 1) % MIDSEEN_MAX; }
-  midseen_save();
-}
-static void midseen_load(void) {
-  char b[MIDSEEN_MAX * 12];
-  uint32_t n = hal_kv_get("midseen", 7, b, sizeof(b) - 1);
-  if (n == 0) return;
-  b[n] = 0; char m[12]; int k = 0;
-  for (unsigned i = 0; i <= n; i++) {
-    char c = (i < n) ? b[i] : ' ';
-    if (c == ' ') { if (k > 0 && g_midseen_n < MIDSEEN_MAX) { m[k] = 0; s_cpy(g_midseen[g_midseen_n++], m, 12); } k = 0; }
-    else if (k < 11) m[k++] = c;
-  }
-  g_midseen_head = g_midseen_n % MIDSEEN_MAX;
 }
 
 /* Separate raw-frame dedup (cross-transport + relay loop guard), kept apart
@@ -1470,38 +1450,10 @@ static void convo_touch(const char *id, const char *preview, int select) {
 /* Distance-only refresh (when a known contact beacons a new position). */
 /* ── XPRS message signatures ──────────────────────────────────────────── */
 /* base85 alphabet — must match the host (lib/util/xprs_crypto.dart). */
-static int is_b85(char c) {
-  if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
-    return 1;
-  const char *p = ".-+=^!/*?&<>()[]%$#@,;_";
-  for (; *p; p++) if (*p == c) return 1;
-  return 0;
-}
 /* A signed message ends with " ~<60 base85 chars>". If present, copy the body
  * (without that suffix) into [core] and the 60-char signature into [sig], and
  * return 1; else 0. */
-#define SIG_B85_LEN 60
-static int sig_split(const char *text, char *core, unsigned coresz,
-                     char *sig, unsigned sigsz) {
-  int n = (int)s_len(text);
-  if (n < SIG_B85_LEN + 2) return 0;
-  int s0 = n - SIG_B85_LEN;
-  if (text[s0 - 1] != '~' || text[s0 - 2] != ' ') return 0;
-  for (int i = s0; i < n; i++) if (!is_b85(text[i])) return 0;
-  int clen = s0 - 2;
-  if ((unsigned)clen >= coresz) clen = (int)coresz - 1;
-  for (int i = 0; i < clen; i++) core[i] = text[i];
-  core[clen] = 0;
-  unsigned j = 0;
-  for (int i = s0; i < n && j + 1 < sigsz; i++) sig[j++] = text[i];
-  sig[j] = 0;
-  return 1;
-}
 /* canonical signed bytes = "<from>|<core>" (must match the signer) */
-static void sig_canon(char *out, unsigned sz, const char *from, const char *core) {
-  out[0] = 0; s_cat(out, from, sz); s_cat(out, "|", sz); s_cat(out, core, sz);
-}
-
 /* ── callsign -> pubkey map (filled from received NOSTR beacons) ───────── */
 static char g_pk_scratch[PK_MAX * 64];
 static const char *pk_get(const char *call) {
@@ -1701,6 +1653,13 @@ static int priv_intercept(const char *from, const char *text) {
  * bulletins/duplicates don't re-notify. */
 static void trc(const char *tag, const char *a, const char *b);
 
+/* The core's verdict on the message being delivered, handed over on the row
+ * rather than recomputed here. Set immediately before convo_deliver and
+ * cleared by it, because a verdict that outlived its message would label the
+ * next one. */
+static char g_row_sig[12] = "";
+static int  g_row_sealed = 0;
+
 static int convo_deliver(const char *id, const char *dir, const char *from,
                           const char *text, const char *preview,
                           const char *via) {
@@ -1736,71 +1695,32 @@ static int convo_deliver(const char *id, const char *dir, const char *from,
    * if it carries a "+<4hex> " reply marker, split off the parent + show the
    * text without the marker. 1:1 chats are untouched. */
   char mid[5] = "", parent[5] = "";
-  /* XPRS signature: split off a trailing " ~<sig>" and verify it. The core
-   * (sig stripped) is what we thread/id/display; the sig never affects mid. */
-  char core[700]; char sigstr[80]; char auth[12] = ""; int have_sig = 0;
+  /* THE WAPP'S OWN MESSAGE FORMAT IS GONE FROM HERE.
+   *
+   * Four schemes used to be layered inside `m:`, each duplicating something
+   * the format already has and the core already does:
+   *
+   *   ENC1:<base64>        a private encryption scheme, decrypted here with
+   *                        hal_decrypt. 9.2's `x:` replaced it, and the core
+   *                        unseals before it hands the message over.
+   *   ~<sig>               a private signature over a canonical form of this
+   *                        wapp's invention, checked with hal_verify --
+   *                        running beside 9.1's `sig:`, which the core had
+   *                        already verified and simply could not report.
+   *   \x01<rmid>\x02       a correlation id for the NOSTR-relay copy of a
+   *                        message. That lane is gone; 5's identifier names
+   *                        a message on every lane at once.
+   *   via "RLY"            the relay lane's own bearer label.
+   *
+   * What arrives now is what a person wrote, already opened and already
+   * checked, with the core's verdict on the row. */
   const char *body = text;
-  if (sig_split(text, core, sizeof(core), sigstr, sizeof(sigstr))) { body = core; have_sig = 1; }
-
-  /* Encrypted 1:1 message ("ENC1:<base64>"): canonicalise (strip spaces that
-   * multi-line reassembly inserts into the space-less base64) so the signature
-   * matches, then decrypt with the peer's key (sender for incoming, recipient
-   * for our own echo). Groups are never encrypted. */
-  int enc = 0; char plain[460]; char canon_content[700];
-  s_cpy(canon_content, body, sizeof(canon_content));
-  const char *disp = body;
-  if (id[0] != '#' && s_len(body) > 5 &&
-      body[0]=='E'&&body[1]=='N'&&body[2]=='C'&&body[3]=='1'&&body[4]==':') {
-    enc = 1;
-    char b64[680]; unsigned bi = 0;
-    for (const char *p = body + 5; *p; p++) if (*p != ' ' && bi + 1 < sizeof(b64)) b64[bi++] = *p;
-    b64[bi] = 0;
-    s_cpy(canon_content, "ENC1:", sizeof(canon_content)); s_cat(canon_content, b64, sizeof(canon_content));
-    const char *peer = s_eq(dir, "out") ? id : from;
-    const char *ppk = pk_get(peer);
-    plain[0] = 0;
-    if (ppk) {
-      uint32_t pn = hal_decrypt(ppk, s_len(ppk), b64, s_len(b64), plain, sizeof(plain) - 1);
-      if (pn > 0 && pn < sizeof(plain)) plain[pn] = 0;
-      else s_cpy(plain, "[encrypted - cannot decrypt]", sizeof(plain));
-    } else {
-      s_cpy(plain, "[encrypted - no key]", sizeof(plain));
-    }
-    disp = plain;
-  }
-
-  /* Relay-dedup id: an encrypted 1:1 (and its NOSTR-relay copy) carries a
-   * "\x01<rmid>\x02" prefix in the plaintext. Pull it out + strip it from the
-   * display text; the dedup below keys on it so the directly-delivered copy and
-   * the relay copy of one message collapse to a single bubble. */
-  char rmid[12] = "";
-  if (id[0] != '#' && disp[0] == '\x01') {
-    int i = 1, j = 0;
-    while (disp[i] && disp[i] != '\x02' && j < 11) rmid[j++] = disp[i++];
-    rmid[j] = 0;
-    if (disp[i] == '\x02') disp = disp + i + 1; else rmid[0] = 0;
-  }
-
-  /* Verify the signature over the canonical (space-normalised) content. */
-  if (have_sig) {
-    if (s_eq(dir, "out")) {
-      s_cpy(auth, "verified", sizeof(auth));     /* we signed it ourselves */
-    } else {
-      const char *pk = pk_get(from);
-      if (!pk) {
-        s_cpy(auth, "unverified", sizeof(auth)); /* sender's key not known yet */
-      } else {
-        char canon[760]; sig_canon(canon, sizeof(canon), from, canon_content);
-        int ok = hal_verify(pk, s_len(pk), canon, s_len(canon), sigstr, s_len(sigstr));
-        s_cpy(auth, ok ? "verified" : "bad", sizeof(auth));
-      }
-    }
-  }
-  /* A relay-delivered DM (via "RLY") arrives already-decrypted: the host did the
-   * NIP-04 decryption AND verified the kind-4 BIP-340 signature before handing it
-   * to us (forgeries are dropped host-side). Reflect that so it shows the same
-   * encrypted + verified badges as a directly-delivered signed ENC1 message. */
-  if (s_eq(via, "RLY")) { enc = 1; s_cpy(auth, "verified", sizeof(auth)); }
+  const char *disp = text;
+  /* The core's verdict on this message, carried on the delivered row. Cleared
+   * after every delivery so it can never leak onto the next one. */
+  char auth[12] = ""; s_cpy(auth, g_row_sig, sizeof(auth));
+  int enc = g_row_sealed;
+  g_row_sig[0] = 0; g_row_sealed = 0;
 
   if (id[0] == '#') {
     /* A like vote ("<4hex>:like") is not a chat message: register the reaction
@@ -1818,14 +1738,11 @@ static int convo_deliver(const char *id, const char *dir, const char *from,
     msg_id(from, body, mid);
     thread_parse(body, parent, &disp);
   }
-  /* Dedup on the signature-stripped (and for encrypted, space-normalised) core,
-   * so the SAME message arriving via two transports (APRS-IS + a BLE iGate), or
-   * signed vs unsigned forms, collapses to one. */
-  /* When the message carries a relay-dedup id, key the dedup on it (the direct
-   * and relay copies have DIFFERENT ciphertexts but the same rmid); otherwise
-   * fall back to the content hash (collapses dual-transport copies of one wire). */
-  unsigned h = rmid[0] ? sig_hash("r", from, rmid)
-                       : sig_hash(id, from, enc ? canon_content : body);
+  /* Dedup on what was said. The same message heard over two bearers is
+   * collapsed by the CORE on its section 5 identifier long before it reaches
+   * here; this only catches a repeat the core cannot see as one, such as a
+   * station re-broadcasting the same bulletin on a schedule. */
+  unsigned h = sig_hash(id, from, body);
   char key[16]; u_itoa(h, key);
   /* Locally hidden message: stays gone even if it arrives again on another
    * transport (the key is the same content signature the host hid it under). */
@@ -1834,25 +1751,8 @@ static int convo_deliver(const char *id, const char *dir, const char *from,
    * was standing. Positions are t:observation and belong to whatever draws a
    * map, which is not a chat. */
   const char *meta = "";
-  /* Relay-backed messages dedup on the persistent rmid ring (survives restarts,
-   * so a late relay copy of an already-shown direct message is dropped); all
-   * others use the in-memory content ring. */
-  int rep;
-  if (rmid[0]) { rep = midseen_has(rmid); if (!rep) midseen_add(rmid); }
-  else { rep = seen_has(h); if (!rep) seen_add(h); }
-  /* 1:1: also fold the key-unknown double — a public copy (no rmid, content
-   * keyed) and its later encrypted backup (rmid keyed) share no dedup key but the
-   * same plaintext. Collapse them on (id,from,plaintext). Encrypted messages no
-   * longer ride APRS, so every copy decrypts to the same text (no undecryptable
-   * twin with a divergent plaintext). Groups keep their own dedup. */
-  /* Only when the primary key above hashed something OTHER than the final
-   * plaintext (encrypted content or an rmid) — for a plain message h already
-   * IS sig_hash(id,from,disp), and re-checking it here self-collides with the
-   * seen_add above, dropping every plain 1:1 as its own duplicate. */
-  if (!rep && id[0] != '#' && (enc || rmid[0])) {
-    unsigned ph = sig_hash(id, from, disp);
-    if (seen_has(ph)) rep = 1; else seen_add(ph);
-  }
+  int rep = seen_has(h);
+  if (!rep) seen_add(h);
   /* A repeated INCOMING message (direct OR a recurring bulletin) is a duplicate
    * — dual-path delivery (APRS-IS + a BLE iGate), a resend, or a station
    * re-broadcasting the same bulletin on a schedule. Drop it so the chat shows
@@ -3112,11 +3012,9 @@ static void deliver_bulletin(const char *gname, const char *from,
    * digipeater must never render as an incoming post or fire a notification,
    * even if an upstream mine-check missed it (e.g. a stale g_call). */
   if (is_self_call(from)) return;
-  /* NOSTR key beacon: record the sender's pubkey and stop (not a chat). */
-  /* Strip any XPRS signature for the preview / like detection; convo_deliver
-   * still gets the full text and re-verifies the signature. */
-  char core[400]; char sg[80]; const char *cbody = text;
-  if (sig_split(text, core, sizeof(core), sg, sizeof(sg))) cbody = core;
+  /* No signature to strip: `sig:` is an envelope field, so it never reaches
+   * this wapp inside the body, and the core reports its verdict on the row. */
+  const char *cbody = text;
   /* A like vote is silent (no notification): convo_deliver registers it. */
   int is_like; char ltgt[5]; { int u; is_like = like_parse(cbody, ltgt, &u); }
   char par[5]; const char *disp_body; thread_parse(cbody, par, &disp_body);
@@ -3639,9 +3537,17 @@ static void on_core_event(const char *topic, const char *row) {
   if (nm && nm[0]) who = nm;
   if (call[0]) who = call;
 
+  /* The core's verdict travels with the message (9.1 for a signature, 9.2 for
+   * a seal that opened). This wapp does not check either: it was doing both,
+   * with schemes of its own, beside the ones the core had already run. */
+  jstr(row, "sig", g_row_sig, sizeof(g_row_sig));
+  g_row_sealed = jbool(row, "sealed");
+
   char mid[5];
   msg_id(from, content, mid);
-  convo_msg(cid, "in", who, content, "", "", "XPRS", mid, "", "", 0, 0);
+  convo_msg(cid, "in", who, content, "", "",
+            "XPRS", mid, "", s_eq(g_row_sig, "verified") ? "verified" : "", 0, 0);
+  g_row_sig[0] = 0; g_row_sealed = 0;
   convo_touch(cid, content, 0);
   notify_msg(cid, who, content, content, mid);
   /* Queue the READ half of 13.7. It fires when the user opens this thread --
@@ -3764,17 +3670,13 @@ void module_init(void) {
    * render. Cheap, idempotent, and it heals a store the user is looking at. */
   for (int i = 0; i < g_cpriv_n; i++) convo_drop_ghost(g_cpriv[i]);
   for (int i = 0; i < g_pk_n; i++) convo_drop_ghost(g_pk_call[i]);
-  midseen_load();   /* restore the persistent relay-message dedup ring */
   pk_render();     /* populate the Keys list view from the restored database */
   /* Bridge restored callsign->pubkey to the host so the Activity feed/profile
    * show npubs immediately, not only after the next live beacon. */
   for (int i = 0; i < g_pk_n; i++) host_identity_emit(g_pk_call[i], g_pk_key[i]);
   /* Bridge restored follow/block state to the host so the profile UI is correct
    * from the first open. */
-  for (int i = 0; i < g_follow_n; i++) host_state_emit("follow", g_follow[i], 1);
   for (int i = 0; i < g_blocked_n; i++) host_state_emit("block", g_blocked[i], 1);
-  { char b[4]; uint32_t n = hal_kv_get("signmsgs", 8, b, sizeof(b) - 1);
-    if (n >= 1) g_sign_msgs = (b[0] != '0'); }
 }
 
 /* Legacy APRS-IS housekeeping: auto-reconnect, login, drop detection, inbound
@@ -3915,7 +3817,6 @@ void module_handle_event(void) {
   else if (s_eq(cmd, "keys_refresh")) pk_render();
   else if (s_eq(cmd, "sign_apply")) {
     g_sign_msgs = jbool_def(buf, "sign_msgs", 0);
-    hal_kv_set("signmsgs", 8, g_sign_msgs ? "1" : "0", 1);
     if (g_sign_msgs && !g_pubkey[0])
       notify("warning", "No profile key — messages can't be signed");
     else {
