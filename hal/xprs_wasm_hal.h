@@ -699,27 +699,28 @@ uint32_t hal_lora_available(void);
 __attribute__((import_module("hal"), import_name("lora_recv")))
 uint32_t hal_lora_recv(char *buf, uint32_t buf_len);
 
-/* ── BLE ────────────────────────────────────────────────────────────── */
-
-/* Start BLE scan. Returns 0 on success. */
-__attribute__((import_module("hal"), import_name("ble_scan_start")))
-int32_t hal_ble_scan_start(void);
-
-/* Stop BLE scan. */
-__attribute__((import_module("hal"), import_name("ble_scan_stop")))
-void hal_ble_scan_stop(void);
-
-/* Read next scan result as JSON into buf. Returns bytes, 0 if none. */
-__attribute__((import_module("hal"), import_name("ble_scan_read")))
-uint32_t hal_ble_scan_read(char *buf, uint32_t buf_len);
-
-/* Start BLE advertising with given payload. Returns 0 on success. */
-__attribute__((import_module("hal"), import_name("ble_advertise")))
-int32_t hal_ble_advertise(const char *data, uint32_t data_len);
-
-/* Stop BLE advertising. */
-__attribute__((import_module("hal"), import_name("ble_advertise_stop")))
-void hal_ble_advertise_stop(void);
+/* ── BLE ────────────────────────────────────────────────────────────── *
+ *
+ * THERE IS NO RAW BLE HAL. Not a scan, not a read, not an advertise.
+ *
+ * `ble_scan_read` handed a wapp every 0x41 advert this radio heard and every
+ * reassembled GATT parcel, each carrying the advertiser's address and its
+ * RSSI -- a transport address and a proximity signal -- for traffic addressed
+ * to other people. The core delivered all of it and trusted the wapp to drop
+ * what was not its business.
+ *
+ * `ble_advertise` was worse: it took arbitrary bytes and made the core SNIFF
+ * them to choose the subtype byte for the wire. Through it a wapp ran a
+ * digipeater of its own, re-airing other stations' frames on a staggered
+ * schedule while appending no `via:` and paying no hop budget, and aired
+ * frames under callsigns that were not this station's.
+ *
+ * A wapp says what it wants said with hal_xprs_message (or hal_xprs_send for
+ * a packet it composed itself). What this radio hears arrives on the event
+ * bus, demuxed, reassembled, unsealed and deduped, and only for the packet
+ * types the wapp subscribed to. All that is left here is whether the adapter
+ * is on.
+ */
 
 /* Whether the physical Bluetooth adapter is powered ON right now (the user can
  * toggle it at the OS level at any time). Returns 1 = on/usable, 0 = off. Use
@@ -1154,33 +1155,13 @@ uint32_t hal_relay_resolve_recv(char *out, uint32_t out_cap);
  * (a NomadNet or Sideband peer writing plain text) is refused at the host's
  * inbox door and reaches no wapp at all.
  *
- * What is left below is the SEND side, which addresses one destination the
- * caller already names -- a different thing from reading everyone's mail. */
-
-/* Send an LXMF message to [dest_hex] (32-hex delivery dest). Fire-and-forget;
- * 1 if queued, -1 on error. */
-__attribute__((import_module("hal"), import_name("lxmf_send")))
-int32_t hal_lxmf_send(const char *dest_hex, uint32_t dest_len,
-                      const char *title, uint32_t title_len,
-                      const char *content, uint32_t content_len);
-
-/* Send a 1:1 and say WHICH FORM it took (XPRS.md section 9.2).
+ * NOR IS THERE A SEND SIDE. `lxmf_send` and `lxmf_send2` named ONE Reticulum
+ * destination, which is a wapp choosing a transport -- and choosing the one
+ * transport that cannot reach a station standing in the same room.
  *
- *   want_private: 1 = sealed body `x:` (the section 9.4 default for a direct
- *                     message), 0 = plain text `m:`.
- *
- * Returns  1 sealed, 2 plain, -1 privacy was asked for and is not possible
- * (the recipient's key has not been heard yet -- the host has just asked for
- * it, section 18.1, so try again shortly), 0 malformed.
- *
- * One call rather than "set a mode, then send": privacy in XPRS is a property
- * of one packet, so either side may switch on any message and there is no mode
- * to hold. Label the bubble with the RETURN VALUE, never with what was asked
- * for -- a message that could not be sealed must never be drawn as private. */
-__attribute__((import_module("hal"), import_name("lxmf_send2")))
-int32_t hal_lxmf_send2(const char *dest_hex, uint32_t dest_len,
-                       const char *content, uint32_t content_len,
-                       uint32_t want_private);
+ * hal_xprs_message replaced both: the wapp gives the words and the recipient,
+ * the core seals (9.2), signs, splits (6.6), ranks the bearers (36.0), parks a
+ * custody copy and hands back the section 5 identifier. */
 
 /* Relay list + live status as JSON [{"uri","scheme","status"}]. Returns bytes
  * written, or the negated required size if [out] is too small. */
@@ -1457,6 +1438,36 @@ int32_t hal_xprs_status(const char *text, uint32_t text_len,
  * scope rules (13.11) and spools its own copy. 0 queued, -1 invalid. */
 __attribute__((import_module("hal"), import_name("xprs_send")))
 int32_t hal_xprs_send(const char *wire, uint32_t wire_len);
+
+/* SAY SOMETHING TO SOMEBODY. THE ONLY WAY A WAPP TRANSMITS.
+ *
+ * The wapp supplies the words and the recipient's callsign. The core composes
+ * the packet, seals it (9.2) when [want_private] and it holds the recipient's
+ * key, signs it (9.1), splits it (6.6), ranks the bearers on 36.0 evidence,
+ * parks a custody copy and remembers the section 5 identifier so a receipt can
+ * find it later. Not one of those is a content decision.
+ *
+ * Returns  1 sealed, 2 plain,
+ *         -1 privacy asked for and not possible -- the recipient's key has not
+ *            been heard; the core has just asked for it (18.1), so try again
+ *            shortly,
+ *          0 malformed.
+ *
+ * -1 IS AN ANSWER, NOT AN ERROR, AND NEVER A DOWNGRADE. Section 36.8 makes
+ * plaintext a disclosure, so a request to seal that cannot be met is refused
+ * out loud rather than quietly sent in the clear. Label the bubble with the
+ * RETURN VALUE, never with what was asked for.
+ *
+ * On success [id_out] receives the section 5 identifier: 6 lowercase hex and a
+ * terminator, so pass a buffer of at least 7. That is what to key the bubble
+ * on -- the core's outbox uses the same value, and a t:receipt names it in
+ * `r:`, so the tick finds its message without any correlation token of your
+ * own invention. */
+__attribute__((import_module("hal"), import_name("xprs_message")))
+int32_t hal_xprs_message(const char *to, uint32_t to_len,
+                         const char *text, uint32_t text_len,
+                         uint32_t want_private,
+                         char *id_out, uint32_t id_cap);
 
 /* A person opened a message: the one receipt a wapp owns (XPRS.md 13.7).
  *

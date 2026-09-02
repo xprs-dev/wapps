@@ -19,12 +19,7 @@
   "entry_ui": "screens/home.ui.json",
   "tick_interval_ms": 1000,
   "permissions": [
-    "archive.read",
-    "transport.ble.raw",
-    "transport.lxmf",
-    "transport.nostr",
-    "transport.rns.raw",
-    "transport.socket"
+    "archive.read"
   ],
   "platforms": [
     "linux",
