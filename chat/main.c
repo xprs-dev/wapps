@@ -5568,6 +5568,10 @@ static void lxmf_drain(void) {
     thread_parse(body, parent, &disp);
     if (!disp[0]) continue;
     char mid[5]; msg_id(is_group_msg ? who : from, disp, mid);
+    /* Same key the core-event path uses, so one message renders once however
+     * it reached us while both routes are live. */
+    if (gseen_has(mid)) continue;
+    gseen_add(mid);
     /* Show the time the sender wrote it (the envelope's), not the time it
      * reached us — see g_msg_epoch. */
     int sent_ts = jint(js, "ts");
@@ -7638,8 +7642,101 @@ static void ble_reconcile(void) {
 }
 
 /* ── module entry points ────────────────────────────────────────────── */
+/* ── What the core routes to us (XPRS.md section 4.2 types) ──────────────
+ *
+ * The core receives every packet, decides which types this wapp registered
+ * for, and calls us with them. We do not read a radio, drain a shared inbox
+ * or poll a socket to find them -- and because delivery is a call, a message
+ * is on screen as soon as the core has it rather than on the next tick.
+ *
+ * The row carries the packet and its provenance: who sent it, the section 5
+ * identifier for dedup, the `via:` relay chain, the bearer it was heard on
+ * and the signal where there was one. */
+static void on_core_event(const char *topic, const char *row) {
+  if (!topic[0] || !row[0]) return;
+
+  char from[24] = "", content[900] = "", title[40] = "", id[24] = "";
+  jstr(row, "from", from, sizeof(from));
+  jstr(row, "title", title, sizeof(title));
+  jstr(row, "id", id, sizeof(id));
+  if (!jstr(row, "content", content, sizeof(content)))
+    jstr(row, "m", content, sizeof(content));
+  if (!from[0] || !content[0]) return;
+  if (is_self_call(from)) return;
+
+  /* The section 5 identifier is derived from the packet, so the same message
+   * heard over two bearers carries the same one and collapses here. Falls
+   * back to the content hash for the LXMF lane, which has no packet. */
+  if (id[0]) {
+    if (gseen_has(id)) return;
+    gseen_add(id);
+  }
+  /* And key on the CONTENT too, because the same message still reaches
+   * lxmf_drain by the old route while that path is being retired. Both sides
+   * add this key, so whichever arrives first renders and the second is a
+   * no-op -- rather than two bubbles for one message, which is what a
+   * half-finished port would ship. */
+  {
+    char dk[8];
+    msg_id(from, content, dk);
+    if (gseen_has(dk)) return;
+    gseen_add(dk);
+  }
+
+  /* A group post is addressed to the group; anything else is correspondence
+   * with the sender. Same split lxmf_drain makes, from the same fields. */
+  char cid[72];
+  if (title[0] == '#') {
+    group_convo_id(title + 1, cid, sizeof(cid));
+    if (!g_chan_nomad || !chan_enabled(cid)) return;
+  } else {
+    s_cpy(cid, "lxmf:", sizeof(cid));
+    s_cat(cid, from, sizeof(cid));
+  }
+  if (!convo_known(cid)) {
+    if (title[0] != '#') lxname_resolve(from);
+    convo_ensure(cid);
+    groups_save();
+    render_rail();
+  }
+
+  const char *who = from;
+  const char *nm = (title[0] == '#') ? 0 : lxname_get(from);
+  if (nm && nm[0]) who = nm;
+
+  char mid[5];
+  msg_id(from, content, mid);
+  convo_msg(cid, "in", who, content, "", "", 0, 0, "XPRS", mid, "", "", 0, 0);
+  convo_touch(cid, content, 0);
+  notify_msg(cid, who, content, content, mid);
+}
+
+/* Drain what the core handed us. Called at the top of module_handle_event,
+ * which is what the core invokes on delivery. */
+static void drain_core_events(void) {
+  static char row[3200];
+  char topic[64];
+  for (int guard = 0; guard < 32; guard++) {
+    if (hal_event_available() == 0) break;
+    uint32_t n = hal_event_recv(topic, sizeof(topic) - 1, row, sizeof(row) - 1);
+    if (n == 0) break;
+    row[n] = 0;
+    on_core_event(topic, row);
+  }
+}
+
 void module_init(void) {
   hal_log(1, "[aprs] init", 11);
+  /* Register for the packet types this wapp is about. The core routes by
+   * `t:` (XPRS.md 4.2), so a type we do not name is never handed to us and
+   * never costs us anything. */
+  {
+    static const char *topics[] = {
+      "xprs.message", "xprs.receipt", "xprs.reaction",
+    };
+    for (unsigned i = 0; i < sizeof(topics) / sizeof(topics[0]); i++)
+      hal_event_subscribe(topics[i], s_len(topics[i]));
+  }
   /* Default callsign = THIS device's profile callsign (so each device
    * transmits as itself, not a hardcoded one). The user's Settings callsign,
    * if set, overrides this via read_config. */
@@ -8263,6 +8360,9 @@ void module_tick(void) {
 
 void module_handle_event(void) {
   char buf[4096];
+  /* What the core routed to us, first: this function is what it calls on
+   * delivery, and a host command is not a precondition for a packet. */
+  drain_core_events();
   if (hal_msg_available() == 0) return;
   uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
   if (n == 0) return;
