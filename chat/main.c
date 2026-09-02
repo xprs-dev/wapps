@@ -92,6 +92,56 @@ static int jstr(const char *buf, const char *key, char *out, unsigned m) {
   }
   out[0] = 0; return 0;
 }
+/* One field of a packet the core delivered.
+ *
+ * The row carries the packet's fields verbatim and IN ORDER, as [key, value]
+ * pairs -- pairs and not an object because XPRS allows a key to repeat and the
+ * section 5 identifier is derived from the order, so a map would quietly
+ * rename the packet. Scans that array for `["<key>",` and reads the value with
+ * the same escape handling jstr uses. */
+static int jfield(const char *row, const char *key, char *out, unsigned m) {
+  out[0] = 0;
+  const char *arr = row;
+  {
+    const char *pat = "\"fields\":[";
+    unsigned pl = s_len(pat);
+    for (;; arr++) {
+      if (!*arr) return 0;
+      unsigned i = 0;
+      while (i < pl && arr[i] == pat[i]) i++;
+      if (i == pl) { arr += pl; break; }
+    }
+  }
+  char pat[40]; pat[0] = '['; pat[1] = '"'; pat[2] = 0;
+  s_cat(pat, key, sizeof(pat)); s_cat(pat, "\",\"", sizeof(pat));
+  unsigned pl = s_len(pat);
+  for (const char *q = arr; *q && *q != ']'; q++) {
+    /* `]` ends the pair array; a `]` inside a value cannot reach here because
+     * the value scan below consumes it. */
+    if (*q == ']' && q[1] == ']') break;
+    unsigned i = 0;
+    while (i < pl && q[i] == pat[i]) i++;
+    if (i != pl) continue;
+    q += pl;
+    unsigned o = 0;
+    while (*q && *q != '"' && o < m - 1) {
+      if (*q == '\\' && *(q + 1)) {
+        q++;
+        if (*q == 'u' && hexv(q[1]) >= 0 && hexv(q[2]) >= 0 &&
+            hexv(q[3]) >= 0 && hexv(q[4]) >= 0) {
+          int v = (hexv(q[1]) << 12) | (hexv(q[2]) << 8) |
+                  (hexv(q[3]) << 4) | hexv(q[4]);
+          q += 5;
+          out[o++] = (char)(v & 0xff);
+        } else out[o++] = *q++;
+      } else out[o++] = *q++;
+    }
+    out[o] = 0;
+    return 1;
+  }
+  return 0;
+}
+
 /* read a JSON bool: matches "key":true / "key":1 (host sends bools unquoted) */
 /* Parse a boolean field; return `def` when the key is absent (so callers can
  * have a true default that an explicit "false" still overrides). */
@@ -344,10 +394,9 @@ static int rns_up(void);
 /* Broadcast a position over the licence-free paths (BLE if on, Reticulum if up).
  * Defined with the BLE frame packer. */
 static void pos_broadcast(double lat, double lon, const char *comment);
-/* Broadcast a group bulletin / geo-chat frame over Reticulum (same compact
- * frame as BLE, so receivers dedup cross-transport copies). No-op when the
- * RNS node is down. Defined with the BLE frame packer. */
-static void rns_tx_bulletin(const char *to, const char *text);
+/* Air a bulletin / area post: one hal_xprs_send, which the core fans out over
+ * every bearer it has evidence for. Defined with the BLE frame packer. */
+static void air_bulletin(const char *to, const char *text);
 
 /* ── Public-key beacon ───────────────────────────────────────────────────
  * Periodically broadcast this station's public key so peers can map our
@@ -792,29 +841,6 @@ static void u_itoa(unsigned v, char *out) {
   if (v == 0) t[j++] = '0';
   while (v > 0) { t[j++] = (char)('0' + v % 10); v /= 10; }
   int k = 0; while (j > 0) out[k++] = t[--j]; out[k] = 0;
-}
-
-/* base64url -> bytes (tolerates standard alphabet + padding). Used to decode the
- * payload of an inbound Reticulum datagram (hal_rns_recv returns it base64url). */
-static int b64v(char c) {
-  if (c >= 'A' && c <= 'Z') return c - 'A';
-  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-  if (c >= '0' && c <= '9') return c - '0' + 52;
-  if (c == '-' || c == '+') return 62;
-  if (c == '_' || c == '/') return 63;
-  return -1;
-}
-static int b64url_decode(const char *in, unsigned char *out, unsigned maxout) {
-  unsigned acc = 0, bits = 0, o = 0;
-  for (const char *p = in; *p; p++) {
-    if (*p == '=' || *p == '\n' || *p == '\r') continue;
-    int v = b64v(*p);
-    if (v < 0) return -1;
-    acc = (acc << 6) | (unsigned)v;
-    bits += 6;
-    if (bits >= 8) { bits -= 8; if (o >= maxout) return -1; out[o++] = (unsigned char)((acc >> bits) & 0xff); }
-  }
-  return (int)o;
 }
 
 /* FNV-1a over convo|from|text — a stable content signature (and the pin key
@@ -3413,11 +3439,7 @@ static void convo_send_core(const char *buf, const char *id_in,
     for (int i = 1; id[i] && id[i] != '*' && gj < 6; i++) gname[gj++] = id[i];
     gname[gj] = 0;
     char bid[10]; bid[0] = '#'; s_cpy(bid + 1, gname, sizeof(bid) - 1);
-    /* Primary: Reticulum broadcast — same compact frame as BLE, so the
-     * receiver's ble_handle/deliver_bulletin path and content dedup treat it
-     * identically to an APRS/BLE copy. */
-    rns_tx_bulletin(bid, wire);
-    if (g_ble_on) ble_tx_msg(bid, wire); /* compact BLE: to = "#group" (no scope) */
+    air_bulletin(bid, wire);
     /* Legacy APRS-IS (opt-in, licensed callsign only). */
     if (net) aprs_send_bulletin_multi(g_sock, g_call, gname, wire, APRS_MAX_MSG_LEN);
     /* Public group post → also store as our own NOSTR note (peers can request
@@ -3587,8 +3609,7 @@ static void do_geochat_send(const char *buf) {
     char tagged[80];
     s_cpy(tagged, ">>", sizeof(tagged));
     s_cat(tagged, chunk, sizeof(tagged));
-    rns_tx_bulletin("", tagged);            /* primary: Reticulum broadcast */
-    if (g_ble_on) ble_tx_msg("", tagged);   /* compact BLE: area/geo-chat text */
+    air_bulletin("", tagged);
     if (net) aprs_send_beacon(g_sock, g_call, g_lat, g_lon, g_symbol, "TCPIP*", tagged);
     n++;
   }
@@ -3626,8 +3647,7 @@ static void do_activity_send(const char *buf) {
   }
   /* Append the BitTorrent infohash if this post references media we host. */
   add_infohash(wire, sizeof(wire));
-  rns_tx_bulletin("#" FEED_GROUP, wire);   /* primary: Reticulum broadcast */
-  if (g_ble_on) ble_tx_msg("#" FEED_GROUP, wire);
+  air_bulletin("#" FEED_GROUP, wire);
   if (net) aprs_send_bulletin_multi(g_sock, g_call, FEED_GROUP, wire, APRS_MAX_MSG_LEN);
   /* Local echo of our own post (with a mid, so it can receive likes/replies). */
   activity_echo_self(text, "");
@@ -3644,8 +3664,7 @@ static void do_activity_like(const char *buf) {
   int unlike = jbool(buf, "activity_unlike");
   char wire[16]; s_cpy(wire, mid, sizeof(wire));
   s_cat(wire, unlike ? ":unlike" : ":like", sizeof(wire));
-  rns_tx_bulletin("#" FEED_GROUP, wire);   /* primary: Reticulum broadcast */
-  if (g_ble_on) ble_tx_msg("#" FEED_GROUP, wire);
+  air_bulletin("#" FEED_GROUP, wire);
   if (g_sock >= 0 && g_logged)
     aprs_send_bulletin_multi(g_sock, g_call, FEED_GROUP, wire, APRS_MAX_MSG_LEN);
   activity_react_emit(mid, g_call, !unlike, 1);   /* our own vote tallies now */
@@ -3663,8 +3682,7 @@ static void do_activity_reply(const char *buf) {
   char wire[480] = "+"; s_cat(wire, mid, sizeof(wire));
   s_cat(wire, " ", sizeof(wire)); s_cat(wire, text, sizeof(wire));
   add_infohash(wire, sizeof(wire));
-  rns_tx_bulletin("#" FEED_GROUP, wire);   /* primary: Reticulum broadcast */
-  if (g_ble_on) ble_tx_msg("#" FEED_GROUP, wire);
+  air_bulletin("#" FEED_GROUP, wire);
   if (net) aprs_send_bulletin_multi(g_sock, g_call, FEED_GROUP, wire, APRS_MAX_MSG_LEN);
   activity_echo_self(text, mid);       /* our reply, threaded under its parent */
   host_note_emit(text, "activity", mid); /* note carries the parent for backfill */
@@ -3702,9 +3720,7 @@ static void recur_broadcast(recur_t *r, int echo) {
   convo[0] = '#'; int j = 1;
   for (int i = 0; r->group[i] && j < 39; i++) convo[j++] = r->group[i];
   convo[j] = 0;
-  /* Primary: Reticulum broadcast (same compact frame as BLE — receivers dedup). */
-  rns_tx_bulletin(convo, r->text);
-  if (g_ble_on) ble_tx_msg(convo, r->text);
+  air_bulletin(convo, r->text);
   /* Legacy APRS-IS (opt-in, licensed callsign only). */
   if (g_sock >= 0 && g_logged)
     aprs_send_bulletin_multi(g_sock, g_call, r->group, r->text, APRS_MAX_MSG_LEN);
@@ -4101,78 +4117,73 @@ static int rns_up(void) {
   return up;
 }
 
-/* Broadcast a group bulletin / geo-chat frame over Reticulum. The frame reuses
- * the compact BLE format, so the receiver's RNS drain feeds it into ble_handle
- * and it dedups against BLE/APRS copies of the same content. */
-static void rns_tx_bulletin(const char *to, const char *text) {
-  if (!rns_up()) return;
-  char frame[900];
-  ble_pack(frame, sizeof(frame), g_call, to, text);
-  hal_rns_broadcast(frame, s_len(frame));
+/* AIR ONE PACKET. THE CORE PICKS THE PATHS.
+ *
+ * This used to be `hal_rns_broadcast` on this wapp's own Reticulum datagram
+ * tag, with the receiving side draining it straight back into ble_handle. That
+ * was a complete XPRS lane living inside a wapp: the core never saw a byte of
+ * it, so a message that arrived that way was not deduped against the copy that
+ * came by radio, paid no hop budget, appended nothing to `via:`, had no
+ * section 5 identity and could not be receipted.
+ *
+ * hal_xprs_send hands the wire to the core, which signs it when we are its
+ * author, ranks the bearers on section 36.0 evidence -- LAN, then BLE5, then
+ * Reticulum -- and fans out when it has none. Everything the fan-out below
+ * used to do by hand (per-device delivery, staleness, a broadcast backstop for
+ * a peer behind NAT) is that ranking, done properly and in one place.
+ *
+ * Returns 1 when the core accepted the wire. A body with no XPRS form -- a
+ * control frame, or text too long for one packet -- returns 0 and goes
+ * nowhere: it never had a receiver except this wapp's own drain. */
+static int xprs_air(const char *to, const char *text) {
+  char wire[900];
+  if (!xprs_pack(wire, sizeof(wire), g_call, to, text, hal_time_epoch())) return 0;
+  return hal_xprs_send(wire, s_len(wire)) == 0 ? 1 : 0;
 }
 
-/* Manual/emergency position beacons over the licence-free transports: BLE (local
- * radio) and a Reticulum broadcast (crosses NATs via the hubs). Automatic
- * interval beacons deliberately stay off RNS to limit hub flood traffic. */
+/* Manual/emergency position beacon. One call: the core airs the observation on
+ * every bearer it has evidence for, which is what the separate BLE advert and
+ * Reticulum broadcast were reaching for one at a time. */
 static void pos_broadcast(double lat, double lon, const char *comment) {
   char t[96] = "";
   append_dbl(t, sizeof(t), lat); s_cat(t, ",", sizeof(t));
   append_dbl(t, sizeof(t), lon);
   if (comment && comment[0]) { s_cat(t, ",", sizeof(t)); s_cat(t, comment, sizeof(t)); }
-  if (g_ble_on) ble_tx_msg("!", t);
-  rns_tx_bulletin("!", t);
+  if (!xprs_air("!", t) && g_ble_on) ble_tx_msg("!", t);
 }
 
-/* Send a 1:1 over Reticulum to EVERY device advertising the recipient's npub
- * (multi-device). Reuses the BLE frame format so the receiver's ble_handle +
- * content dedup treat it identically to an APRS/BLE copy — a message that also
- * arrived over APRS-IS/BLE is shown once. [wire] is already ENC1-encrypted to the
- * npub when known, so a wrong/forged/stale dest gets an undecryptable blob.
- * Returns the number of devices it queued to (0 = no key/dest → no RNS path). */
-static int rns_tx_msg(const char *to, const char *wire) {
-  const char *npub = pk_get(to);
-  if (!npub || !npub[0]) return 0;
-  char frame[900];
-  ble_pack(frame, sizeof(frame), g_call, to, wire);
-  uint64_t now = hal_time_epoch();
-  int sent = 0;
-  /* Directed delivery to each of the recipient's known devices — best for
-   * privacy and works when a direct LXMF path/link can be established. */
-  for (int i = 0; i < g_rns_n; i++) {
-    if (!s_eq(g_rns_npub[i], npub)) continue;
-    if (g_rns_dts[i] && now - g_rns_dts[i] > RNS_TTL) continue;   /* stale device */
-    if (hal_rns_send_to(g_rns_dest[i], s_len(g_rns_dest[i]), frame, s_len(frame)) == 1) sent++;
-  }
-  /* Reliable cross-network backstop: also flood the frame as a Reticulum
-   * broadcast. Broadcasts are announce-relayed by the public hubs, so they reach
-   * a peer behind NAT on a different network where a direct LXMF link to its
-   * delivery dest can't be opened. Safe to flood: the body is ENC1-encrypted to
-   * the recipient's npub (only they can read it) and only the addressed callsign
-   * handles it as a 1:1 — every other node drops it. The receiver dedups this
-   * against the directed copy by content hash, so it still shows once. */
-  if (hal_rns_broadcast(frame, s_len(frame)) == 1) sent++;
-  return sent;
-}
-
-/* PUBLIC 1:1 send. Same as rns_tx_msg, except that a recipient whose pubkey we
- * have never heard still gets the frame — as a plaintext Reticulum broadcast,
- * which is what the message already is when there is no key to encrypt it to.
+/* Send a 1:1 through the core.
  *
- * rns_tx_msg returns 0 the moment pk_get() comes up empty, BEFORE the broadcast
- * backstop, so writing to a contact whose pubkey beacon had not arrived yet
- * transmitted NOTHING: no directed copy, no broadcast, and with BLE and APRS-IS
- * off (the normal case) the message left the device by no path at all while the
- * UI happily echoed it into the thread. Private conversations keep the strict
- * rule — they must never fall back to plaintext — so they still call
- * rns_tx_msg directly. */
+ * What stood here was the wapp doing transport policy: a per-device table with
+ * its own staleness TTL, a directed copy to each of the recipient's known
+ * Reticulum destinations, and a broadcast backstop for a peer behind NAT --
+ * all of it on a datagram tag only this wapp could hear. XprsPublisher already
+ * makes exactly these decisions, from section 36.0's evidence rather than from
+ * a table this wapp kept, and it makes them for every bearer rather than for
+ * Reticulum alone.
+ *
+ * [wire] is already ENC1-encrypted to the recipient's npub when a key is
+ * known, so what travels is unchanged; only who chooses the path is.
+ * Returns 1 when the core took it. */
+static int rns_tx_msg(const char *to, const char *wire) {
+  return xprs_air(to, wire);
+}
+
+/* A bulletin, an area post, a recurring broadcast. One call: hal_xprs_send airs
+ * it on every bearer the core has evidence for, which is what the paired
+ * Reticulum-broadcast-plus-BLE-advert did one transport at a time -- and airing
+ * both would now be the same packet twice. The compact BLE frame stays as the
+ * fallback for a body with no XPRS form. */
+static void air_bulletin(const char *to, const char *text) {
+  if (!xprs_air(to, text) && g_ble_on) ble_tx_msg(to, text);
+}
+
+/* PUBLIC 1:1 send. Identical now -- the distinction it used to draw was about
+ * whether a plaintext BROADCAST was an acceptable fallback, and there is no
+ * broadcast lane here any more. A private conversation still refuses to send
+ * without a key; that test lives at the composer, not in the transport. */
 static int rns_tx_public(const char *to, const char *wire) {
-  int sent = rns_tx_msg(to, wire);
-  if (sent > 0) return sent;
-  const char *npub = pk_get(to);
-  if (npub && npub[0]) return sent;   /* key known: rns_tx_msg already broadcast */
-  char frame[900];
-  ble_pack(frame, sizeof(frame), g_call, to, wire);
-  return hal_rns_broadcast(frame, s_len(frame)) == 1 ? 1 : 0;
+  return xprs_air(to, wire);
 }
 
 /* ── Store-and-forward: BLE iGate mailbox for heard stations ──────────────
@@ -7436,32 +7447,71 @@ static void do_ping(const char *buf) {
  * for a Reticulum datagram over the internet). The RNS path reuses the BLE frame
  * FORMAT but must NOT be mislabelled as Bluetooth, so the caller passes the real
  * transport and we tag every delivered copy with it. */
+/* Undirected text -- the Live tab's area chat. Shown, never notified. Same two
+ * lanes as render_position: the compact frame, and a `t:message` with no `d:`. */
+static void render_geochat(const char *from, const char *text, const char *via) {
+  char meta[24] = ""; double slat = 0, slon = 0;
+  if (pos_get(from, &slat, &slon)) distance_to(slat, slon, meta, sizeof(meta));
+  if (!geo_dup(from, text))
+    chat_append("geochat", "", "in", from, text, "msg", 0, meta, slat, slon, via);
+  if (!is_following(from)) return;
+  const char *c = text;
+  if (c[0] == '>' && c[1] == '>') { c += 2; while (*c == ' ') c++; }
+  if (c[0]) activity_capture(from, "", c, via);
+}
+
+/* A position sighting, from whichever lane carried it: the compact `!` frame
+ * an ESP32 still airs, or a `t:observation` the core hands us. [text] is the
+ * compact body in both cases -- "lat,lon[,comment]" -- because that is what
+ * the map, the geo-chat feed and the follow capture already read. */
+static void render_position(const char *from, const char *text, const char *via) {
+  char a[24] = "", b[24] = "", comment[80] = "";
+  int s2 = 0, ai = 0, bi = 0, ci = 0;
+  for (const char *q = text; *q; q++) {
+    if (*q == ',' && s2 < 2) { s2++; continue; }
+    if (s2 == 0) { if (ai < 23) a[ai++] = *q; }
+    else if (s2 == 1) { if (bi < 23) b[bi++] = *q; }
+    else { if (ci < 79) comment[ci++] = *q; }
+  }
+  a[ai] = 0; b[bi] = 0; comment[ci] = 0;
+  double lat = to_dbl(a), lon = to_dbl(b);
+  push_marker(from, lat, lon, 0, comment);
+  pos_set(from, lat, lon);
+  if (convo_known(from)) convo_badge_only(from);
+  if (!comment[0]) return;
+  char meta[24] = ""; distance_to(lat, lon, meta, sizeof(meta));
+  if (!geo_dup(from, comment))
+    chat_append("geochat", "", "in", from, comment, "pos", 0, meta, lat, lon, via);
+  if (!is_following(from)) return;
+  const char *c = comment;
+  if (c[0] == '>' && c[1] == '>') {
+    c += 2; while (*c == ' ') c++;
+    if (c[0]) activity_capture(from, "", c, via);
+  } else {
+    char t[300]; s_cpy(t, "status: ", sizeof(t)); s_cat(t, c, sizeof(t));
+    activity_capture(from, "", t, via);
+  }
+}
+
 static void ble_handle(const char *compact, int rssi, const char *via) {
   char from[16] = "", to[24] = "", text[256] = "";
 
-  /* Two formats on the air: XPRS, which is what we now send, and the compact
-   * frame, which older builds and the ESP32 still send. Both land in the same
-   * (from, to, text), so everything below this point is unchanged. */
-  if (xprs_looks_like(compact)) {
-    uint64_t sent = 0;
-    if (!xprs_unpack(compact, from, sizeof(from), to, sizeof(to),
-                     text, sizeof(text), &sent)) {
-      return;   /* a type chat has nothing to show for — the XPRS wapp does */
-    }
-    /* A message's time is the SENDER's. The compact frame never carried one,
-     * so a message that waited in a mailbox was stamped with its arrival;
-     * XPRS says when it was written. Ignore a clock that is obviously wrong
-     * rather than filing the message in the wrong hour. */
-    uint64_t now = hal_time_epoch();
-    if (sent && sent <= now + 300 && now - sent < 30ULL * 24 * 3600) {
-      g_msg_epoch = sent;
-    }
-  } else {
-    /* Not the compact frame either. A wire with no 0x1f separator would leave
-     * `seg` at 0 and copy the ENTIRE thing into from[16], then reach the Live
-     * feed as a bubble with no sender -- another way a raw packet lands on a
-     * screen. Anything packet-shaped stops here. */
-    if (xprs_is_wire(compact)) return;
+  /* AN XPRS PACKET OFF THIS RADIO IS NOT OURS TO HANDLE.
+   *
+   * It went through the core's receive door before we ever saw it -- the raw
+   * scan a wapp reads is a copy taken AFTER PacketGateway, not a lane of its
+   * own -- and the core delivers it to us properly on the event bus:
+   * reassembled (6.6), unsealed, verified, deduped across bearers, with the
+   * section 5 identifier and its provenance. Rendering it here as well put the
+   * same message on screen twice, and repeating it here as well made this
+   * wapp a second digipeater that appends nothing to `via:`.
+   *
+   * What is left for this function is the compact frame: what older builds and
+   * the ESP32 still air, and the control frames (?PING, ?MAIL, ?IGATE, HELLO)
+   * that have no XPRS form at all -- xprs_pack refuses a `?` address, which is
+   * exactly why they are still compact. */
+  if (xprs_looks_like(compact) || xprs_is_wire(compact)) return;
+  {
     int seg = 0, fi = 0, ti = 0, xi = 0;
     for (const char *q = compact; *q; q++) {
       if (*q == BLE_SEP) { seg++; continue; }
@@ -7527,29 +7577,7 @@ static void ble_handle(const char *compact, int rssi, const char *via) {
   }
 
   if (s_eq(to, "!")) {                    /* position: "lat,lon[,comment]" */
-    char a[24] = "", b[24] = "", comment[80] = "";
-    int s2 = 0, ai = 0, bi = 0, ci = 0;
-    for (const char *q = text; *q; q++) {
-      if (*q == ',' && s2 < 2) { s2++; continue; }
-      if (s2 == 0) { if (ai < 23) a[ai++] = *q; }
-      else if (s2 == 1) { if (bi < 23) b[bi++] = *q; }
-      else { if (ci < 79) comment[ci++] = *q; }
-    }
-    a[ai] = 0; b[bi] = 0; comment[ci] = 0;
-    double lat = to_dbl(a), lon = to_dbl(b);
-    push_marker(from, lat, lon, 0, comment);
-    pos_set(from, lat, lon);
-    if (convo_known(from)) convo_badge_only(from);
-    if (comment[0]) {
-      char meta[24] = ""; distance_to(lat, lon, meta, sizeof(meta));
-      if (!geo_dup(from, comment))
-        chat_append("geochat", "", "in", from, comment, "pos", 0, meta, lat, lon, via);
-      if (is_following(from)) {
-        const char *c = comment;
-        if (c[0] == '>' && c[1] == '>') { c += 2; while (*c == ' ') c++; if (c[0]) activity_capture(from, "", c, via); }
-        else { char t[300]; s_cpy(t, "status: ", sizeof(t)); s_cat(t, c, sizeof(t)); activity_capture(from, "", t, via); }
-      }
-    }
+    render_position(from, text, via);
   } else if (to[0] == '#') {              /* group bulletin (in range/local for BLE) */
     deliver_bulletin(to + 1, from, text, 1, via);
     /* iGate BLE → APRS-IS: re-originate the bulletin under the sender's
@@ -7567,16 +7595,7 @@ static void ble_handle(const char *compact, int rssi, const char *via) {
       aprs_send_raw(g_sock, line);
     }
   } else if (!to[0]) {                    /* area / geo-chat broadcast text */
-    char meta[24] = ""; double slat = 0, slon = 0;
-    if (pos_get(from, &slat, &slon)) distance_to(slat, slon, meta, sizeof(meta));
-    if (!geo_dup(from, text))
-      chat_append("geochat", "", "in", from, text, "msg", 0, meta, slat, slon, via);
-    if (is_following(from)) {
-      const char *c = text;
-      if (c[0] == '>' && c[1] == '>') { c += 2; while (*c == ' ') c++; }
-      if (c[0]) activity_capture(from, "", c, via);
-    }
-    /* Geochat/Live-tab broadcast: shown on the Live tab, no notification. */
+    render_geochat(from, text, via);
   } else {                               /* 1:1 to a callsign */
     int amine = 1;
     for (int i = 0; g_call[i] || to[i]; i++) {
@@ -7652,6 +7671,57 @@ static void ble_reconcile(void) {
  * The row carries the packet and its provenance: who sent it, the section 5
  * identifier for dedup, the `via:` relay chain, the bearer it was heard on
  * and the signal where there was one. */
+/* A packet the core delivered as HEARD: the wire's own fields, its section 5
+ * identifier, and where it came from. This is the shape for traffic addressed
+ * to nobody in particular -- a group post, a position -- which is aired (6.3)
+ * rather than couriered, so it never passes through the 1:1 delivery below.
+ *
+ * A finished 1:1 does NOT render from here. It arrives on the same topic in
+ * the other shape, with `content`, only after the core has reassembled its
+ * parts and opened its seal -- which is the whole reason that shape exists. */
+static void on_core_packet(const char *topic, const char *row) {
+  char from[24] = "", to[40] = "", id[24] = "", via[12] = "", bearer[12] = "";
+  jstr(row, "from", from, sizeof(from));
+  jstr(row, "to", to, sizeof(to));
+  jstr(row, "id", id, sizeof(id));
+  jstr(row, "bearer", bearer, sizeof(bearer));
+  if (!from[0] || is_self_call(from)) return;
+  /* A part is not a message (6.6) and a sealed body is not readable: both are
+   * the core's to finish, and it re-delivers the result. */
+  { char n[8]; if (jfield(row, "n", n, sizeof(n))) return; }
+  if (jbool(row, "sealed")) return;
+  if (id[0]) {
+    if (gseen_has(id)) return;
+    gseen_add(id);
+  }
+  /* The bearer in the reader's vocabulary. A packet that crossed the internet
+   * says so; anything else names the radio it was heard on. */
+  s_cpy(via, s_eq(bearer, "rns") ? "RET" : (bearer[0] ? bearer : "XPRS"),
+        sizeof(via));
+
+  if (s_eq(topic, "xprs.observation")) {
+    /* pos: is the coordinate pair, m: the human part -- the compact `!` body
+     * is the two joined by a comma, which is what render_position reads. */
+    char pos[64] = "", m[160] = "", body[240];
+    if (!jfield(row, "pos", pos, sizeof(pos))) return;
+    jfield(row, "m", m, sizeof(m));
+    s_cpy(body, pos, sizeof(body));
+    if (m[0]) { s_cat(body, ",", sizeof(body)); s_cat(body, m, sizeof(body)); }
+    render_position(from, body, via);
+    return;
+  }
+
+  if (!s_eq(topic, "xprs.message")) return;
+  char m[900] = "";
+  if (!jfield(row, "m", m, sizeof(m)) || !m[0]) return;
+  /* Addressed to a station -- including a closed group, which is a station by
+   * 6.3's naming rule -- is correspondence or group business, and neither
+   * renders from a packet as heard. What is left is the aired kinds. */
+  if (xprs_is_station(to)) return;
+  if (!to[0]) render_geochat(from, m, via);
+  else deliver_bulletin(to, from, m, s_eq(via, "RET") ? 0 : 1, via);
+}
+
 static void on_core_event(const char *topic, const char *row) {
   if (!topic[0] || !row[0]) return;
 
@@ -7659,9 +7729,15 @@ static void on_core_event(const char *topic, const char *row) {
   jstr(row, "from", from, sizeof(from));
   jstr(row, "title", title, sizeof(title));
   jstr(row, "id", id, sizeof(id));
-  if (!jstr(row, "content", content, sizeof(content)))
-    jstr(row, "m", content, sizeof(content));
-  if (!from[0] || !content[0]) return;
+  /* Two shapes reach us on xprs.message. `content` marks the finished one --
+   * a 1:1 the core reassembled and unsealed. Without it this is a packet as
+   * heard, and only the aired kinds (a group post, an observation) render from
+   * that; the rest is on_core_packet's business. */
+  if (!jstr(row, "content", content, sizeof(content)) || !content[0]) {
+    on_core_packet(topic, row);
+    return;
+  }
+  if (!from[0]) return;
   if (is_self_call(from)) return;
 
   /* The section 5 identifier is derived from the packet, so the same message
@@ -7732,7 +7808,7 @@ void module_init(void) {
    * never costs us anything. */
   {
     static const char *topics[] = {
-      "xprs.message", "xprs.receipt", "xprs.reaction",
+      "xprs.message", "xprs.observation", "xprs.receipt", "xprs.reaction",
     };
     for (unsigned i = 0; i < sizeof(topics) / sizeof(topics[0]); i++)
       hal_event_subscribe(topics[i], s_len(topics[i]));
@@ -8226,40 +8302,12 @@ void module_tick(void) {
     }
   }
 
-  /* Drain inbound Reticulum datagrams (1:1 backstop + private-mode messages +
-   * ?PRIV controls). Independent of APRS-IS/BLE. The payload reuses the BLE frame
-   * FORMAT, so ble_handle parses + dedups it exactly like a BLE/APRS copy — shown
-   * once. If the same frame also arrives over real Bluetooth, whichever copy
-   * lands first wins the dedup and sets the tag.
-   *
-   * The Reticulum lane is where a datagram is HANDED OVER, not where it
-   * travelled: the node reaches its peers over Bluetooth, the LAN, LoRa and
-   * the hubs alike, and every one of those used to arrive here tagged "RET"
-   * and tell the reader "Reticulum" — so a message from the board on the
-   * bench claimed to have come off the internet. The host now says which
-   * bearer carried it ("via" in the envelope: ble/lan/espnow/lora/… , or
-   * "rns" when it genuinely crossed the internet); we pass that on. "rns"
-   * becomes the routing token "RET" so everything downstream that asks
-   * "did this come off the wider network?" keeps its answer. */
-  {
-    static char env[1200];
-    static char payb64[800];
-    unsigned char frame[700];
-    for (int guard = 0; guard < 20; guard++) {
-      if (hal_rns_available() == 0) break;
-      uint32_t n = hal_rns_recv(env, sizeof(env) - 1);
-      if (n == 0) break;
-      env[n] = 0;
-      if (!jstr(env, "payload", payb64, sizeof(payb64))) continue;
-      int fn = b64url_decode(payb64, frame, sizeof(frame) - 1);
-      if (fn <= 0) continue;
-      frame[fn] = 0;
-      char bearer[12] = "";
-      jstr(env, "via", bearer, sizeof(bearer));
-      const char *via = (!bearer[0] || s_eq(bearer, "rns")) ? "RET" : bearer;
-      ble_handle((const char *)frame, 0, via);   /* rssi 0 — no RF signal to report */
-    }
-  }
+  /* The Reticulum drain that stood here is gone with the lane it served. It
+   * read this wapp's own datagram tag and fed ble_handle directly, which meant
+   * an XPRS packet that crossed the internet reached the screen without ever
+   * passing the core: no dedup against the radio copy, no `via:`, no section 5
+   * identity, no receipt. The core delivers those on the event bus now --
+   * drain_core_events, at the top of module_handle_event. */
 
   /* Legacy APRS-IS connection management + drain. Runs LAST of the transports
    * and never early-returns out of module_tick: the Reticulum/relay machinery
