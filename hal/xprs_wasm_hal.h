@@ -1120,26 +1120,19 @@ uint32_t hal_relay_resolve_recv(char *out, uint32_t out_cap);
  * signs on hal_nostr_post — the nsec never enters the wasm sandbox. */
 
 /* ── LXMF (Reticulum's own messaging: NomadNet, Sideband, …) ──────────────
- * A XPRS group rides NOSTR, but the Reticulum world already has its own
- * chat, and those people are on the same mesh. These two calls let a wapp read
- * what they send us and answer it, so a NomadNet user is a participant rather
- * than a different app.
+ * A XPRS group rides NOSTR, but the Reticulum world already has its own chat,
+ * and those people are on the same mesh.
  *
- * Pop the next inbound LXMF message as JSON {from(hex), title, content, hash,
- * ts, fields?}: `from` is the sending NODE's delivery dest — the address you
- * reply TO. For a distribution group that is the GROUP's own address, not the
- * member who wrote the message, so `from` alone cannot tell people apart.
+ * THERE IS NO hal_lxmf_recv. It was a cursor over the host's entire LXMF
+ * inbox -- every private message on the device, with no recipient test -- and
+ * a second receive door besides: the same message reached a wapp both there
+ * and on the event bus, with a cursor that restarted at zero on every engine.
+ * A message arrives once now, from the core, on `xprs.message`. Foreign LXMF
+ * (a NomadNet or Sideband peer writing plain text) is refused at the host's
+ * inbox door and reaches no wapp at all.
  *
- * `fields` (present only when the message carried any) is the decoded LXMF
- * field map: keys are decimal strings (8 = thread, 11 = group), byte values
- * arrive as text when printable and hex otherwise. It is the only way to tell
- * a group message from a direct one.
- *
- * Returns bytes written, 0 when drained. Poll each tick, like the other
- * inboxes. The cursor is per-engine and advances only on a successful read, so
- * nothing that arrived while the wapp was down is lost. */
-__attribute__((import_module("hal"), import_name("lxmf_recv")))
-uint32_t hal_lxmf_recv(char *out, uint32_t out_cap);
+ * What is left below is the SEND side, which addresses one destination the
+ * caller already names -- a different thing from reading everyone's mail. */
 
 /* Send an LXMF message to [dest_hex] (32-hex delivery dest). Fire-and-forget;
  * 1 if queued, -1 on error. */
@@ -1441,6 +1434,18 @@ int32_t hal_xprs_status(const char *text, uint32_t text_len,
  * scope rules (13.11) and spools its own copy. 0 queued, -1 invalid. */
 __attribute__((import_module("hal"), import_name("xprs_send")))
 int32_t hal_xprs_send(const char *wire, uint32_t wire_len);
+
+/* A person opened a message: the one receipt a wapp owns (XPRS.md 13.7).
+ *
+ * [id] is the message's section 5 identifier, as delivered on the event bus.
+ * The core composes and signs the `t:receipt s:read`, applies 13.7.1's
+ * exclusions (no group, no broadcast, no stranger) and picks the lane. A wapp
+ * does not compose a receipt, invent a correlation id, or choose a transport.
+ *
+ * 0 = a read receipt went out. -1 = none did, which is ordinary: the message
+ * may have aged out of the core's remembered set, or 13.7.1 may refuse one. */
+__attribute__((import_module("hal"), import_name("xprs_read")))
+int32_t hal_xprs_read(const char *id, uint32_t id_len);
 
 /* The persistent spool of heard XPRS packets (section 24 serve:history) —
  * everything this station archived, past the traffic ring's 200 entries and

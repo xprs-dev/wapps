@@ -388,6 +388,9 @@ static int ble_reach_chips(char *out, unsigned max);
  * out to every RNS delivery dest advertised under the recipient's npub. */
 static int rns_tx_msg(const char *to, const char *wire);
 static int rns_tx_public(const char *to, const char *wire);
+/* Air one packet and report its section 5 identifier -- what the core keys its
+ * outbox on, and what a receipt names in `r:`. Defined with the BLE packer. */
+static int xprs_air_id(const char *to, const char *text, char rid[7]);
 /* Reticulum is the PRIMARY transport (APRS-IS is legacy/opt-in and requires a
  * licensed callsign): 1 when the local RNS node is up. Defined with rns_tx_msg. */
 static int rns_up(void);
@@ -1417,14 +1420,26 @@ static void convo_remove_from(const char *from) {
   hal_msg_send(m, s_len(m));
 }
 
-/* ── 1:1 delivery/read receipts (WhatsApp-style ticks) ────────────────────
- * Every 1:1 message carries a small "am:<6hex>" correlation token. The receiver
- * echoes it so the sender advances the bubble sent -> delivered -> read:
- *   - delivered over APRS = the STANDARD APRS ack<seq> (APRSdroid-compatible,
- *     handled in route_frame); over BLE/RNS = a "?ACK <am> d" control frame.
- *   - read = a "?ACK <am> r" control frame sent when the user opens the chat.
- * Receipt frames are consumed by rcpt_intercept (never rendered). Status is
- * pushed to the host via ui.convo.status keyed by the message's rid (= am). */
+/* ── 1:1 delivery/read receipts (XPRS.md section 13.7) ────────────────────
+ *
+ * This wapp used to run a receipt protocol of its own: a random "am:<6hex>"
+ * token prepended to every 1:1 wire, echoed back inside a "?ACK <am> d|r"
+ * control frame. It was a second correlation id competing with the one the
+ * format already defines, it was unsigned -- and 13.7.1 is blunt about why
+ * that matters, since a receipt is what makes every carrier drop its held copy
+ * -- and no station outside this wapp spoke a word of it.
+ *
+ * 13.7's receipt is `t:receipt r:<section 5 id> s:ack|read`, signed, and the
+ * core composes, signs, verifies and releases on it. What is left here is the
+ * two ends of that:
+ *
+ *   - the bubble's rid is the section 5 identifier of the packet we aired, so
+ *     the core's outbox and our bubble are keyed on the same thing;
+ *   - `xprs.status.tx` reports what the core learned, and we draw the tick;
+ *   - hal_xprs_read tells the core a person opened the message, which is the
+ *     one half of 13.7 the core cannot observe for itself.
+ *
+ * Status is still pushed to the host as ui.convo.status keyed by rid. */
 
 /* Advance a message's tick state on the host (keyed by its rid). */
 static void convo_status_emit(const char *rid, const char *status) {
@@ -1451,107 +1466,26 @@ static const char *ackmap_get(int seq) {
   return 0;
 }
 
-/* Received-but-unread 1:1 messages awaiting a read receipt on convo open. */
+/* Received-but-unread 1:1 messages, by section 5 identifier, awaiting the read
+ * receipt the core sends when the user opens the conversation. */
 #define RPEND_MAX 64
-/* Wide enough for an LXMF conversation id ("lxmf:" + 32 hex = 37), not just a
- * callsign. At 16 it silently truncated one to 15 characters, so the read
- * receipt for a NomadNet/Bluetooth thread never matched the conversation the
- * user opened and the second tick never appeared. */
+/* Wide enough for an LXMF conversation id ("lxmf:" + 32 hex = 37). */
 static char g_rpend_convo[RPEND_MAX][48];
-static char g_rpend_am[RPEND_MAX][8];
-static char g_rpend_via[RPEND_MAX][8];
+static char g_rpend_id[RPEND_MAX][8];
 static int  g_rpend_n = 0;
-static void rpend_add(const char *convo, const char *am, const char *via) {
-  if (!am[0]) return;
-  for (int i = 0; i < g_rpend_n; i++) if (s_eq(g_rpend_am[i], am)) return;
+static void rpend_add(const char *convo, const char *id) {
+  if (!id || !id[0]) return;
+  for (int i = 0; i < g_rpend_n; i++) if (s_eq(g_rpend_id[i], id)) return;
   if (g_rpend_n >= RPEND_MAX) {                 /* drop oldest */
     for (int i = 1; i < RPEND_MAX; i++) {
       s_cpy(g_rpend_convo[i-1], g_rpend_convo[i], sizeof(g_rpend_convo[0]));
-      s_cpy(g_rpend_am[i-1], g_rpend_am[i], 8);
-      s_cpy(g_rpend_via[i-1], g_rpend_via[i], 8);
+      s_cpy(g_rpend_id[i-1], g_rpend_id[i], 8);
     }
     g_rpend_n = RPEND_MAX - 1;
   }
   s_cpy(g_rpend_convo[g_rpend_n], convo, sizeof(g_rpend_convo[0]));
-  s_cpy(g_rpend_am[g_rpend_n], am, 8);
-  s_cpy(g_rpend_via[g_rpend_n], via, 8);
+  s_cpy(g_rpend_id[g_rpend_n], id, 8);
   g_rpend_n++;
-}
-
-/* Raw APRS message to [to] carrying [body], WITHOUT a {seq (so the recipient
- * doesn't ack it) — same envelope as send_ack. */
-static void aprs_msg_noseq(const char *to, const char *body) {
-  if (!to[0] || g_sock < 0 || !g_logged) return;
-  char dest[10]; int i = 0;
-  for (; to[i] && i < 9; i++) dest[i] = up(to[i]);
-  dest[i] = 0;
-  while (s_len(dest) < 9) s_cat(dest, " ", sizeof(dest));
-  char line[128];
-  s_cpy(line, g_call, sizeof(line));
-  s_cat(line, ">APRS,TCPIP*::", sizeof(line));
-  s_cat(line, dest, sizeof(line));
-  s_cat(line, ":", sizeof(line));
-  s_cat(line, body, sizeof(line));
-  aprs_send_raw(g_sock, line);
-}
-
-/* Send a "?ACK <am> <state>" receipt to [to] over the arrival transport [via]
- * plus the Reticulum backstop. state = 'd' delivered / 'r' read. */
-static void send_receipt(const char *to, const char *am, char state, const char *via) {
-  if (!to || !to[0] || to[0] == '#' || !am || !am[0]) return;
-  char body[24]; s_cpy(body, "?ACK ", sizeof(body)); s_cat(body, am, sizeof(body));
-  char sp[3] = {' ', state, 0}; s_cat(body, sp, sizeof(body));
-  /* A NomadNet/Bluetooth peer is addressed by its delivery destination, not by
-   * a callsign — the conversation id carries it as "lxmf:<dest>". Without this
-   * the read receipt for those threads was aired at a callsign nobody has. */
-  if (s_pre(to, "lxmf:")) {
-    const char *d = to + 5;
-    hal_lxmf_send(d, s_len(d), "", 0, body, s_len(body));
-    return;
-  }
-  if (s_eq(via, "NET")) aprs_msg_noseq(to, body);
-  else if (g_ble_on && s_eq(via, "BLE")) ble_tx_msg(to, body);
-  rns_tx_msg(to, body);   /* backstop (covers RET/RLY arrival + reliability) */
-}
-
-/* Intercept an inbound "?ACK <am> <d|r>" receipt: advance our bubble state and
- * consume the frame (return 1) so it never renders as a chat message. */
-static int rcpt_intercept(const char *from, const char *text) {
-  (void)from;
-  if (!(text[0]=='?'&&text[1]=='A'&&text[2]=='C'&&text[3]=='K'&&text[4]==' ')) return 0;
-  const char *p = text + 5;
-  char am[8]; int i = 0;
-  while (*p && *p != ' ' && i < 7) am[i++] = *p++;
-  am[i] = 0;
-  if (*p == ' ') p++;
-  if (am[0] && (*p == 'd' || *p == 'r'))
-    convo_status_emit(am, *p == 'r' ? "read" : "delivered");
-  return 1;
-}
-
-/* Extract + strip an "am:<6hex>" token from [s] in place. Returns 1 and writes
- * the 6-hex id to [am] when present. */
-static int extract_am(char *s, char *am) {
-  am[0] = 0;
-  for (char *p = s; *p; p++) {
-    if (!(p[0]=='a' && p[1]=='m' && p[2]==':')) continue;
-    if (p > s && p[-1] != ' ') continue;         /* must start a token */
-    int ok = 1;
-    for (int i = 0; i < 6; i++) {
-      char c = p[3+i];
-      if (!((c>='0'&&c<='9') || (c>='a'&&c<='f'))) { ok = 0; break; }
-    }
-    char after = p[9];
-    if (!ok || (after != 0 && after != ' ')) continue;
-    for (int i = 0; i < 6; i++) am[i] = p[3+i];
-    am[6] = 0;
-    char *start = (p > s && p[-1] == ' ') ? p - 1 : p;   /* eat a leading space */
-    char *end = p + 9;
-    if (start == p && *end == ' ') end++;                /* front token: eat trailing space */
-    unsigned n = 0; while (end[n]) { start[n] = end[n]; n++; } start[n] = 0;
-    return 1;
-  }
-  return 0;
 }
 
 /* Extract + strip an "np:<npub>" token — the recipient identity a best-hope
@@ -1591,20 +1525,22 @@ static int extract_np(char *s, char *np, unsigned np_sz) {
  * while this flush sat behind `conversations_open`, a command that screen never
  * sends. The second tick was therefore unreachable on exactly the conversations
  * that matter, no matter what else was fixed. */
+/* The user opened a conversation, so its messages have been read. Report each
+ * one to the core BY IDENTIFIER and let it do the rest: 13.7.1's exclusions,
+ * the signature, and which lane the receipt goes out on. That this wapp knows
+ * a person looked at the screen is the one fact the core cannot observe, and
+ * it is the whole of what a wapp owes a receipt. */
 static void rpend_flush_read(const char *convo) {
   if (!convo || !convo[0] || convo[0] == '#') return;  /* groups: no receipts */
   if (room_is_room(convo)) return;                     /* rooms: no 1:1 receipts */
   int w = 0;
   for (int i = 0; i < g_rpend_n; i++) {
     if (s_eq(g_rpend_convo[i], convo)) {
-      send_receipt(convo, g_rpend_am[i], 'r', g_rpend_via[i]);
+      hal_xprs_read(g_rpend_id[i], s_len(g_rpend_id[i]));
     } else {
       if (w != i) {
-        /* sizeof, not 16: an id kept here used to be cut to 15 characters,
-         * which is half of why a second open never found its entry. */
         s_cpy(g_rpend_convo[w], g_rpend_convo[i], sizeof(g_rpend_convo[0]));
-        s_cpy(g_rpend_am[w], g_rpend_am[i], 8);
-        s_cpy(g_rpend_via[w], g_rpend_via[i], 8);
+        s_cpy(g_rpend_id[w], g_rpend_id[i], 8);
       }
       w++;
     }
@@ -1862,34 +1798,6 @@ static char g_cp_id[CHANPPL_MAX][40];
 static char g_cp_who[CHANPPL_MAX][CHANPPL_WHO][16];
 static int g_cp_n[CHANPPL_MAX];
 static int g_cp_used = 0;
-
-static void chanppl_save(void) {
-  char b[CHANPPL_MAX * (40 + CHANPPL_WHO * 17)]; b[0] = 0;
-  for (int i = 0; i < g_cp_used; i++) {
-    s_cat(b, g_cp_id[i], sizeof(b)); s_cat(b, "=", sizeof(b));
-    for (int k = 0; k < g_cp_n[i]; k++) {
-      s_cat(b, g_cp_who[i][k], sizeof(b)); s_cat(b, ",", sizeof(b));
-    }
-    s_cat(b, ";", sizeof(b));
-  }
-  hal_kv_set("chanppl", 7, b, s_len(b));
-}
-static void chanppl_add(const char *chan, const char *who) {
-  if (!chan || chan[0] != '#' || !who || !who[0]) return;
-  int slot = -1;
-  for (int i = 0; i < g_cp_used; i++) if (s_eq(g_cp_id[i], chan)) { slot = i; break; }
-  if (slot < 0) {
-    if (g_cp_used >= CHANPPL_MAX) return;
-    slot = g_cp_used++;
-    s_cpy(g_cp_id[slot], chan, sizeof(g_cp_id[0]));
-    g_cp_n[slot] = 0;
-  }
-  for (int k = 0; k < g_cp_n[slot]; k++)
-    if (s_eq(g_cp_who[slot][k], who)) return;          /* already counted */
-  if (g_cp_n[slot] >= CHANPPL_WHO) return;             /* "24+" is enough */
-  s_cpy(g_cp_who[slot][g_cp_n[slot]++], who, sizeof(g_cp_who[0][0]));
-  chanppl_save();
-}
 static int chanppl_count(const char *chan) {
   for (int i = 0; i < g_cp_used; i++) if (s_eq(g_cp_id[i], chan)) return g_cp_n[i];
   return 0;
@@ -2688,12 +2596,12 @@ static int convo_deliver(const char *id, const char *dir, const char *from,
     trc("drop:blocked", from, "");
     return 0;
   }
-  /* Receipt correlation id: pull `am:<6hex>` out of the wire + strip it so it
-   * never displays (1:1 only; groups never carry it). */
-  char am[8] = ""; char ambuf[720]; char pvbuf[720];
+  /* No `am:` to pull off any more: the correlation id is the section 5
+   * identifier, which is derived from the packet rather than carried in it, so
+   * nothing has to be stripped before display. */
+  char ambuf[720];
   if (id[0] != '#') {
     s_cpy(ambuf, text, sizeof(ambuf));
-    extract_am(ambuf, am);
     /* A best-hope custody copy names the identity it is FOR. Anyone can put our
      * callsign on an envelope; only mail carrying our own key is ours. */
     { char np[64];
@@ -2706,10 +2614,6 @@ static int convo_deliver(const char *id, const char *dir, const char *from,
       }
     }
     text = ambuf;
-    /* Strip the token from the list-preview too so the row subtitle is clean. */
-    char tmp[8]; s_cpy(pvbuf, preview, sizeof(pvbuf));
-    extract_am(pvbuf, tmp);
-    preview = pvbuf;
   }
   /* Interacting with this callsign: capture its public key if we'd parked one. */
   if (s_eq(dir, "in")) peer_note(from);
@@ -2854,13 +2758,12 @@ static int convo_deliver(const char *id, const char *dir, const char *from,
    * transports notifies only once. Group bulletins notify via their own caller;
    * our own echoes (dir "out") never notify. */
   if (s_eq(dir, "in") && id[0] != '#') notify_msg(from, from, disp, disp, mid);
-  /* WhatsApp-style receipts: a freshly-delivered inbound 1:1 that carried an `am`
-   * confirms DELIVERED to the sender (over BLE/RNS; APRS uses the native ack sent
-   * by route_frame) and queues a READ receipt for when the user opens the chat. */
-  if (s_eq(dir, "in") && id[0] != '#' && am[0]) {
-    if (!s_eq(via, "NET")) send_receipt(from, am, 'd', via);
-    rpend_add(id, am, via);
-  }
+  /* The DELIVERED half of 13.7 is the core's: it composed and signed an `s:ack`
+   * when it handed this message over, which is also where it decided whether
+   * 13.7.1 allows a receipt at all. The READ half is queued here and fires when
+   * the user opens the conversation -- see rpend_flush_read. The identifier
+   * comes from the delivered row, and only the core-delivered path has one, so
+   * a message that reached us any other way simply earns no read receipt. */
   /* NOTE: group/DM conversation messages are deliberately NOT mirrored into the
    * Activity feed. The Activity tab is the micro-blog stream (FEED group) only —
    * group chatter belongs in Messages, not the public stream. FEED posts reach
@@ -4135,10 +4038,23 @@ static int rns_up(void) {
  * Returns 1 when the core accepted the wire. A body with no XPRS form -- a
  * control frame, or text too long for one packet -- returns 0 and goes
  * nowhere: it never had a receiver except this wapp's own drain. */
-static int xprs_air(const char *to, const char *text) {
+static int xprs_air_id(const char *to, const char *text, char rid[7]) {
   char wire[900];
+  rid[0] = 0;
   if (!xprs_pack(wire, sizeof(wire), g_call, to, text, hal_time_epoch())) return 0;
+  /* Section 5: derived from the packet, never transmitted. The core keys its
+   * outbox on exactly this, and the receiver derives the same value from the
+   * bytes it gets -- including after a 6.6 split, because the identifier is
+   * taken over the REASSEMBLED packet. So it is the correlation id the `am:`
+   * token used to be, except that both ends compute it instead of one end
+   * inventing it and the other echoing it back. */
+  xprs_id(wire, s_len(wire), rid);
   return hal_xprs_send(wire, s_len(wire)) == 0 ? 1 : 0;
+}
+
+static int xprs_air(const char *to, const char *text) {
+  char rid[7];
+  return xprs_air_id(to, text, rid);
 }
 
 /* Manual/emergency position beacon. One call: the core airs the observation on
@@ -4435,14 +4351,17 @@ static char g_sub_groups[64] = "";
 static char g_gseen[64][20];      /* event ids already rendered */
 static int  g_gseen_n = 0, g_gseen_w = 0;
 
-/* PERSISTENT, and it has to be.
+/* PERSISTENT, and it still has to be.
  *
- * hal_lxmf_recv is a cursor over the HOST's durable inbox, and the cursor is
- * per-engine: it starts at 0 every time an engine starts. Opening the wapp's
- * page starts a fresh engine, so it re-reads the entire inbox and re-emits every
- * message that was ever delivered — the same LXMF message appeared five and six
- * times over (observed on-device). An in-memory seen-ring cannot stop that,
- * because it dies with the engine that held it. */
+ * The cursor this was written to compensate for is gone with hal_lxmf_recv --
+ * it restarted at 0 on every engine, so opening the wapp's page re-emitted
+ * every message ever delivered, five and six times over. That is fixed at the
+ * source now.
+ *
+ * It stays because a section 5 identifier is worth remembering across a
+ * restart for its own sake: the same packet reaches this station over more
+ * than one bearer and again as a custody re-air, and an in-memory ring dies
+ * with the engine that held it. */
 static int gseen_has(const char *id) {
   for (int i = 0; i < g_gseen_n; i++) if (s_eq(g_gseen[i], id)) return 1;
   return 0;
@@ -4633,9 +4552,9 @@ static void render_rail(void) {
     convo_title(id, title, sizeof(title));
     if (!first) s_cat(extra, ",", sizeof(extra));
     first = 0;
-    /* People seen: only where senders were actually distinguishable (see
-     * lxmf_drain). A direct 1:1 is two people by definition, so it claims
-     * nothing. */
+    /* People seen: whatever earlier builds recorded for this channel. Its one
+     * writer was the LXMF bridge drain, which is gone, so this only ever shows
+     * what is already stored -- a direct 1:1 claims nothing either way. */
     int people = lx ? -1 : chanppl_count(id);
     rail_item(extra, sizeof(extra), id, title, people,
               lx ? lxmf_live(id + 5) : 0);
@@ -5097,7 +5016,6 @@ static void render_searchall(void) {
         char sh[9]; s_cpy(sh, id + 5, sizeof(sh)); s_cat(o, sh, sz);
       } else {
         s_cat(o, "Channel", sz);
-        /* Only when senders were actually distinguishable — see lxmf_drain. */
         int seen = chanppl_count(id);
         if (seen > 0) {
           char nb[12]; u_itoa((unsigned)seen, nb);
@@ -5371,227 +5289,20 @@ static void lxname_resolve(const char *dest) {
   }
 }
 
-/* ── Groups from NomadNet (LXMF) ────────────────────────────────────────────
- * Reticulum already has its own chat, and those people are on the same mesh. An
- * inbound LXMF message whose title names a group (#NEWS) joins that group's
- * conversation; anything else lands in #NOMADNET, so a NomadNet user is never
- * silently dropped. Ingest only — we do not invent an outbound LXMF group
- * protocol here (see the wapp README / commit message). */
-#define LXMF_GROUP "#NOMADNET"
-/* Does this inbound LXMF JSON carry the group field (LXMF field 11 = 0x0B)?
- * The host now passes the decoded field map through as "fields":{"11":…}. */
-static int lxmf_is_group(const char *js) {
-  const char *f = js;
-  while (*f && !s_pre(f, "\"fields\":")) f++;
-  if (!*f) return 0;
-  for (const char *p = f; *p && *p != '}'; p++) if (s_pre(p, "\"11\"")) return 1;
-  return 0;
-}
-/* An LXMF field naming the message's author, when the sender supplied one.
- * Field 11 (group) carries the group context; some stacks put a display name
- * there or in a custom string field. Accept a plain string value, reject a
- * hash — a 32/64-hex blob is an address, not a name to show. */
-static int lxmf_field_sender(const char *js, char *out, unsigned cap) {
-  out[0] = 0;
-  const char *f = js;
-  while (*f && !s_pre(f, "\"fields\":")) f++;
-  if (!*f) return 0;
-  /* Look at field 11's value when it is a quoted string. */
-  const char *p = f;
-  while (*p && *p != '}') {
-    if (s_pre(p, "\"11\":\"")) {
-      p += 6;
-      unsigned i = 0;
-      while (*p && *p != '"' && i < cap - 1) out[i++] = *p++;
-      out[i] = 0;
-      /* A pure hex blob is an address; not a name. */
-      int hex = out[0] != 0;
-      for (unsigned k = 0; out[k]; k++) {
-        char c = out[k];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) { hex = 0; break; }
-      }
-      if (hex || s_len(out) > 32) { out[0] = 0; return 0; }
-      return out[0] != 0;
-    }
-    p++;
-  }
-  return 0;
-}
-/* Length of a leading "<name>: " sender prefix, 0 when there is none.
- * NomadNet group software prefixes the author this way. Bounded so a sentence
- * containing a colon ("note: it works") is not mistaken for an author. */
-static unsigned sender_prefix_len(const char *text) {
-  for (unsigned i = 0; i < 24 && text[i]; i++) {
-    if (text[i] == '\n') return 0;
-    if (text[i] == ':' && text[i + 1] == ' ' && i > 0) {
-      /* A name, not prose: no sentence punctuation before the colon. */
-      for (unsigned k = 0; k < i; k++) {
-        char c = text[k];
-        if (c == ',' || c == '.' || c == '?' || c == '!') return 0;
-      }
-      return i;
-    }
-  }
-  return 0;
-}
-
-static void lxmf_drain(void) {
-  for (int guard = 0; guard < 10; guard++) {
-    char js[1400];
-    uint32_t n = hal_lxmf_recv(js, sizeof(js) - 1);
-    if (n == 0) break;
-    js[n] = 0;
-    char from[80] = "", title[64] = "", hash[80] = "";
-    static char content[900];
-    content[0] = 0;
-    jstr(js, "from", from, sizeof(from));
-    jstr(js, "title", title, sizeof(title));
-    jstr(js, "content", content, sizeof(content));
-    jstr(js, "hash", hash, sizeof(hash));
-    if (!content[0]) continue;
-    /* Protocol, not correspondence. An XPRS wire ("t:command", "t:result",
-     * "t:status" ...) can reach us over LXMF because that is a lane the
-     * public hubs actually forward -- but it is machinery talking to
-     * machinery, and a bubble reading "t:result f:X10G3D d:..." is spam in
-     * somebody's conversation. The host files these into its own XPRS funnel;
-     * the chat only ever shows what a person wrote.
-     *
-     * The test was `s_pre(content, "t:")` and that is precisely how these kept
-     * arriving anyway: a sealed packet reaches us with `x:` leading --
-     * `x:<blob> t:message f:X3ARK d:X1VCVM ts:... n:2/3 sig:...` -- so the
-     * prefix test missed it and it became a bubble AND a notification, over
-     * and over. xprs_is_wire() asks whether the content is SHAPED like a
-     * packet instead of where its first field lands. */
-    if (xprs_is_wire(content)) continue;
-    if (gseen_has(hash)) continue;
-    gseen_add(hash);
-
-    char cid[72];
-    if (title[0] == '#') {
-      /* A titled/group LXMF message: the shared bridge channel. */
-      group_convo_id(title + 1, cid, sizeof(cid));
-    } else {
-      /* A personal DM from one NomadNet peer: its own conversation, keyed by
-       * the sender's delivery dest — reply lands exactly where it came from.
-       * (These used to pile into the #NOMADNET channel, where answering a
-       * PERSON was impossible.) */
-      s_cpy(cid, "lxmf:", sizeof(cid));
-      s_cat(cid, from, sizeof(cid));
-    }
-    if (!g_chan_nomad) continue;        /* the user switched the bridge off */
-    if (cid[0] == '#' && !chan_enabled(cid)) continue;
-    if (!convo_known(cid)) {
-      /* First contact from this address: ask the host's directory who it is
-       * before the row is drawn, so a new thread opens as "X16JK8" rather than
-       * "LXMF 85cdc031" and stays that way. */
-      if (title[0] != '#') lxname_resolve(from);
-      convo_ensure(cid);   /* auto-join, or nobody sees it */
-      groups_save();       /* …and PERSIST the join — an unsaved auto-join was
-                            * gone after a restart while the host store kept
-                            * counting its unread: a badge pointing at nothing */
-      render_rail();
-    }
-
-    /* WHO wrote this.
-     *
-     * `from` is the sending NODE. For a distribution group that is the group's
-     * own address, so every member arrives under one identity — which is why
-     * group bubbles all used to show the same 12-hex prefix and why counting
-     * people was impossible. Recover the author where the sender gave us one:
-     *   1. an LXMF field naming the originator, else
-     *   2. the NomadNet convention of a "<name>: " prefix on the content, else
-     *   3. nobody — attribute to the node and count nothing. */
-    char who[40] = "";
-    const char *body = content;
-    int is_group_msg = (title[0] == '#') || lxmf_is_group(js);
-    if (is_group_msg) {
-      char f[64];
-      if (lxmf_field_sender(js, f, sizeof(f)) && f[0]) {
-        s_cpy(who, f, sizeof(who));
-      } else {
-        unsigned cut = sender_prefix_len(content);
-        if (cut) {
-          unsigned k = 0;
-          while (k < cut && k < sizeof(who) - 1) { who[k] = content[k]; k++; }
-          who[k] = 0;
-          body = content + cut + 2;       /* past ": " */
-        }
-      }
-    }
-    int sender_known = who[0] != 0;
-    if (!sender_known) {
-      /* A 1:1 DM: the sender IS the conversation, so use the name we hold for
-       * it. Printing 12 hex characters as the author made every bubble read
-       * like a machine ID even when the panel that opened the thread knew the
-       * person's callsign. */
-      const char *nm = (title[0] == '#') ? 0 : lxname_get(from);
-      if (nm && nm[0]) { s_cpy(who, nm, sizeof(who)); sender_known = 1; }
-      else s_cpy(who, from, 13);                /* the node, not a person */
-    }
-
-    /* People seen: only a DISTINGUISHED sender counts. A group whose messages
-     * never name their author must show no number rather than "1 person",
-     * which would read as a fact and be an artefact of the addressing. */
-    if (is_group_msg && sender_known) chanppl_add(cid, who);
-
-    /* A like vote, not a message — the mirror of the send path above. A peer
-     * (or an older build of ours) that puts a vote on the wire must never
-     * become a bubble here. */
-    {
-      char ltgt[70]; int ul; const char *vtext;
-      if (votemark_parse(body, ltgt, &ul, &vtext)) {
-        convo_react_of(vtext, cid, ltgt, who, ul, 0);
-        continue;
-      }
-      if (anylike_parse(body, ltgt, &ul)) {
-        convo_react(cid, ltgt, who, ul, 0);
-        continue;
-      }
-    }
-    /* Receipt correlation id, and the receipt itself.
-     *
-     * `am:<6hex>` rides in front of the text (see the send path). Pull it out
-     * and strip it BEFORE anything renders or threads on the body, then answer
-     * it: the sender is waiting for exactly this to turn its bubble from
-     * pending into a tick. A "?ACK <am> <d|r>" arriving here is that answer
-     * coming back, and it is not a message -- rcpt_intercept consumes it. */
-    char lam[8] = "";
-    { char ambuf[900]; s_cpy(ambuf, body, sizeof(ambuf));
-      if (extract_am(ambuf, lam)) {
-        static char lbody[900];
-        s_cpy(lbody, ambuf, sizeof(lbody));
-        body = lbody;
-      } }
-    if (rcpt_intercept(from, body)) continue;   /* a tick, never a bubble */
-    if (lam[0] && !is_group_msg) {
-      char rcpt[24];
-      s_cpy(rcpt, "?ACK ", sizeof(rcpt));
-      s_cat(rcpt, lam, sizeof(rcpt));
-      s_cat(rcpt, " d", sizeof(rcpt));
-      hal_lxmf_send(from, s_len(from), "", 0, rcpt, s_len(rcpt));
-      rpend_add(cid, lam, "RET");   /* the read receipt, when the chat opens */
-    }
-    /* Strip the reply marker and hand the host the parent separately. The mid
-     * is derived from "<sender>|<text>", exactly as the sender derived it, so
-     * a reply or a heart resolves on both ends without an id on the wire.
-     * (The LXMF envelope hash cannot serve: only the receiver ever sees it.) */
-    char parent[5]; const char *disp;
-    thread_parse(body, parent, &disp);
-    if (!disp[0]) continue;
-    char mid[5]; msg_id(is_group_msg ? who : from, disp, mid);
-    /* Same key the core-event path uses, so one message renders once however
-     * it reached us while both routes are live. */
-    if (gseen_has(mid)) continue;
-    gseen_add(mid);
-    /* Show the time the sender wrote it (the envelope's), not the time it
-     * reached us — see g_msg_epoch. */
-    int sent_ts = jint(js, "ts");
-    if (sent_ts > 0) g_msg_epoch = (uint64_t)sent_ts;
-    convo_msg(cid, "in", who, disp, "", "", 0, 0, "LXM", mid, parent, "", 0, 0);
-    convo_touch(cid, disp, 0);
-    notify_msg(cid, who, disp, disp, mid);
-  }
-}
+/* THE LXMF DRAIN IS GONE, AND SO IS hal_lxmf_recv.
+ *
+ * It was a cursor over the host's whole LXMF inbox -- every private message on
+ * the device, with no recipient test -- and it was a SECOND receive door: the
+ * same message reached this wapp both here and through the core's event bus,
+ * so this file carried a persistent seen-ring whose only job was deduping the
+ * core against itself, because the cursor restarted at zero on every engine.
+ *
+ * What it delivered that the bus does not is foreign LXMF: plain text from a
+ * NomadNet or Sideband peer, which is not an XPRS packet at all. That interop
+ * ends here, deliberately. The host refuses it at the inbox door.
+ *
+ * A message now arrives one way: the core delivers it, once, reassembled and
+ * unsealed, with its section 5 identifier. See on_core_event. */
 
 /* Subscribed groups persist in KV "groups" (";"-joined ids) so the APRS-IS
  * filter is correct immediately after a restart, before any row is reopened. */
@@ -6224,10 +5935,11 @@ static void route_frame(const char *line) {
         if (amine && follow_intercept(p.from, p.text)) return;
         if (amine && priv_intercept(p.from, p.text)) return;
         if (amine && rly_intercept(p.from, p.text)) return;
-        /* Receipts are control traffic addressed to the SENDER, but broadcast
-         * transports (BLE/RNS) let any station overhear them — consume them for
-         * everyone (not just the addressee) so they never render as Live/chat. */
-        if (rcpt_intercept(p.from, p.text)) return;
+        /* A stale "?ACK …" from a peer still running the old build is not a
+         * message. The dialect is retired -- 13.7's signed t:receipt replaced
+         * it, and the core handles that -- so this only keeps the leftovers
+         * off the screen. */
+        if (s_pre(p.text, "?ACK ")) return;
         /* A bare signature line is a continuation fragment, not a message:
          * keep it off the Live tab + notifications; da_ reassembles it. */
         int sigln = is_sig_line(p.text);
@@ -7605,9 +7317,8 @@ static void ble_handle(const char *compact, int rssi, const char *via) {
     if (amine && follow_intercept(from, text)) return;
     if (amine && priv_intercept(from, text)) return;
     if (amine && rly_intercept(from, text)) return;
-    /* Consume receipts for any overhearer (broadcast BLE/RNS), not just the
-     * addressee, so a "?ACK …" frame never surfaces as a Live/chat message. */
-    if (rcpt_intercept(from, text)) return;
+    /* Same, for the compact BLE lane. */
+    if (s_pre(text, "?ACK ")) return;
     /* Same for native APRS ack/rej lines bridged onto BLE (e.g. by an older
      * relay): control traffic, never chat and never re-originated. */
     if (is_ack_text(text)) return;
@@ -7725,10 +7436,23 @@ static void on_core_packet(const char *topic, const char *row) {
 static void on_core_event(const char *topic, const char *row) {
   if (!topic[0] || !row[0]) return;
 
-  char from[24] = "", content[900] = "", title[40] = "", id[24] = "";
+  /* The outbound side of 13.7: what the core learned about a message WE sent.
+   * The tick used to be asserted by this wapp off its own `?ACK` dialect; it
+   * is now reported by the core, off a signed t:receipt, keyed on the same
+   * section 5 identifier the bubble carries. */
+  if (s_eq(topic, "xprs.status.tx")) {
+    char sid[24] = "", state[16] = "";
+    jstr(row, "id", sid, sizeof(sid));
+    jstr(row, "state", state, sizeof(state));
+    if (sid[0] && state[0]) convo_status_emit(sid, state);
+    return;
+  }
+
+  char from[24] = "", content[900] = "", title[40] = "", id[24] = "", call[24] = "";
   jstr(row, "from", from, sizeof(from));
   jstr(row, "title", title, sizeof(title));
   jstr(row, "id", id, sizeof(id));
+  jstr(row, "call", call, sizeof(call));
   /* Two shapes reach us on xprs.message. `content` marks the finished one --
    * a 1:1 the core reassembled and unsealed. Without it this is a packet as
    * heard, and only the aired kinds (a group post, an observation) render from
@@ -7741,26 +7465,32 @@ static void on_core_event(const char *topic, const char *row) {
   if (is_self_call(from)) return;
 
   /* The section 5 identifier is derived from the packet, so the same message
-   * heard over two bearers carries the same one and collapses here. Falls
-   * back to the content hash for the LXMF lane, which has no packet. */
+   * heard over two bearers carries the same one and collapses here. */
   if (id[0]) {
     if (gseen_has(id)) return;
     gseen_add(id);
-  }
-  /* And key on the CONTENT too, because the same message still reaches
-   * lxmf_drain by the old route while that path is being retired. Both sides
-   * add this key, so whichever arrives first renders and the second is a
-   * no-op -- rather than two bubbles for one message, which is what a
-   * half-finished port would ship. */
-  {
+  } else {
+    /* No packet behind it: key on the content instead. */
     char dk[8];
     msg_id(from, content, dk);
     if (gseen_has(dk)) return;
     gseen_add(dk);
   }
 
+  /* Control traffic between two chat instances is not correspondence and must
+   * never become a bubble. These used to be consumed in ble_handle, on the way
+   * up from the radio; a message reaching us through the core arrives here
+   * instead, so the same tests belong here. They key on the CALLSIGN, which is
+   * why the core puts it on the row -- `from` is a delivery destination. */
+  if (call[0]) {
+    if (follow_intercept(call, content)) return;
+    if (priv_intercept(call, content)) return;
+    if (rly_intercept(call, content)) return;
+  }
+  if (s_pre(content, "?ACK ") || is_ack_text(content)) return;
+
   /* A group post is addressed to the group; anything else is correspondence
-   * with the sender. Same split lxmf_drain makes, from the same fields. */
+   * with the sender. */
   char cid[72];
   if (title[0] == '#') {
     group_convo_id(title + 1, cid, sizeof(cid));
@@ -7776,15 +7506,21 @@ static void on_core_event(const char *topic, const char *row) {
     render_rail();
   }
 
+  /* The sender's name: the callsign the core resolved, then whatever the host
+   * knows for the delivery dest, then the dest itself. */
   const char *who = from;
   const char *nm = (title[0] == '#') ? 0 : lxname_get(from);
   if (nm && nm[0]) who = nm;
+  if (call[0]) who = call;
 
   char mid[5];
   msg_id(from, content, mid);
   convo_msg(cid, "in", who, content, "", "", 0, 0, "XPRS", mid, "", "", 0, 0);
   convo_touch(cid, content, 0);
   notify_msg(cid, who, content, content, mid);
+  /* Queue the READ half of 13.7. It fires when the user opens this thread --
+   * the one fact about this message the core cannot observe for itself. */
+  if (title[0] != '#') rpend_add(cid, id);
 }
 
 /* Drain what the core handed us. Called at the top of module_handle_event,
@@ -7808,7 +7544,11 @@ void module_init(void) {
    * never costs us anything. */
   {
     static const char *topics[] = {
-      "xprs.message", "xprs.observation", "xprs.receipt", "xprs.reaction",
+      "xprs.message", "xprs.observation", "xprs.reaction",
+      /* Not `xprs.receipt`: a receipt heard on the air is the core's, and it
+       * reports the outcome on the topic below rather than handing us a packet
+       * to interpret. */
+      "xprs.status.tx",
     };
     for (unsigned i = 0; i < sizeof(topics) / sizeof(topics[0]); i++)
       hal_event_subscribe(topics[i], s_len(topics[i]));
@@ -8385,7 +8125,6 @@ void module_tick(void) {
     room_event_ingest(rv);
   }
 
-  lxmf_drain();
 
   /* Cold-start 1:1: drain callsign→npub resolutions and flush queued public
    * sends as encrypted relay backups. */

@@ -21,7 +21,7 @@
   "permissions": [
     "archive.read",
     "transport.ble.raw",
-    "transport.lxmf.inbox",
+    "transport.lxmf",
     "transport.nostr",
     "transport.rns.raw",
     "transport.socket"
