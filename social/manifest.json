@@ -16,7 +16,9 @@
   ],
   "entry_ui": "screens/home.ui.json",
   "tick_interval_ms": 1500,
-  "permissions": [],
+  "permissions": [
+    "archive.read"
+  ],
   "platforms": [
     "linux",
     "windows",

@@ -18,7 +18,14 @@
   ],
   "entry_ui": "screens/home.ui.json",
   "tick_interval_ms": 1000,
-  "permissions": [],
+  "permissions": [
+    "archive.read",
+    "transport.ble.raw",
+    "transport.lxmf.inbox",
+    "transport.nostr",
+    "transport.rns.raw",
+    "transport.socket"
+  ],
   "platforms": [
     "linux",
     "windows",

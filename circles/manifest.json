@@ -15,7 +15,9 @@
   ],
   "entry_ui": "screens/home.ui.json",
   "tick_interval_ms": 1000,
-  "permissions": [],
+  "permissions": [
+    "transport.rns.raw"
+  ],
   "platforms": [
     "linux",
     "windows",
