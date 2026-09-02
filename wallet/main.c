@@ -132,7 +132,11 @@ void module_destroy(void) { /* nothing to clean up */ }
 
 /* Event-driven: the wallet does no periodic work. Use a long idle interval
  * (the host arms a Timer with this value, and 0 would busy-loop). */
-uint32_t module_tick_interval_ms(void) { return 60000; }
+/* No clock. Every one of this wapp's jobs starts with something happening to
+ * it -- a command from its page, or an event from the core -- so it declares
+ * no tick interval and gets no timer. It used to declare 60000 and wake the
+ * engine on that cadence to run an empty function. */
+uint32_t module_tick_interval_ms(void) { return 0; }
 
 void module_handle_event(void) {
     char buf[8192];

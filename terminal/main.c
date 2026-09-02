@@ -557,6 +557,10 @@ void module_destroy(void) {
     log_info("[terminal] destroy");
 }
 
+/* No clock. Every one of this wapp's jobs starts with something happening to
+ * it -- a command from its page, or an event from the core -- so it declares
+ * no tick interval and gets no timer. It used to declare 500 and wake the
+ * engine on that cadence to run an empty function. */
 uint32_t module_tick_interval_ms(void) {
-    return 500;
+    return 0;
 }
