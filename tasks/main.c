@@ -104,29 +104,52 @@ static void send_action_no_id(const char *action) {
 
 void module_init(void) {
     hal_log(1, "[tasks] init", 12);
-    /* Kick off the first snapshot request immediately so the UI is
-     * never blank for a full tick interval. */
+    /* The core says when a task started, finished, paused or failed -- which
+     * is the only reason this list can change. It used to send the host a
+     * snapshot request every second instead: a round trip whose answer, on a
+     * device where nothing is starting or stopping, is the same list sixty
+     * times a minute. */
+    {
+        static const char *t = "core.tasks";
+        hal_event_subscribe(t, str_len(t));
+    }
+    /* One request now, so the screen is never blank. */
     send_cstr(REQ_LIST);
 }
 
+/* No clock: a task list changes when a task changes, and the core says so. */
 void module_tick(void) {
-    /* Poll the host for an updated snapshot every tick. The host
-     * stashes it directly in WappPage state and rebuilds — this wapp
-     * does not need to receive the response. */
-    send_cstr(REQ_LIST);
 }
 
 void module_destroy(void) {
     hal_log(1, "[tasks] destroy", 15);
 }
 
+/* 0 = no clock: see module_tick. */
 uint32_t module_tick_interval_ms(void) {
-    return 1000;
+    return 0;
 }
 
 /* Parse incoming command messages from the renderer and translate
  * them into system.tasks.* actions back to the host. */
 void module_handle_event(void) {
+    /* A task changed: ask for the new snapshot. The event carries a revision,
+     * not the list -- the host still assembles that on request, once, when
+     * there is a reason to. */
+    {
+        static char topic[48];
+        static char data[256];
+        int any = 0;
+        for (int guard = 0; guard < 16; guard++) {
+            if (hal_event_available() == 0) break;
+            if (hal_event_recv(topic, sizeof(topic) - 1, data,
+                               sizeof(data) - 1) == 0)
+                break;
+            any = 1;
+        }
+        if (any) send_cstr(REQ_LIST);
+    }
+
     char buf[1024];
     while (hal_msg_available() != 0) {
         uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
