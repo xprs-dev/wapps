@@ -14,7 +14,6 @@ static char g_pending[72];   /* circle awaiting an "add member" npub */
 static char g_panel[72];     /* circle whose Edit/Share/People panel is open */
 static char g_member[80];    /* member awaiting a role/remove choice */
 static char g_role[48];      /* role being edited ("" = creating a new one) */
-static int  g_ticks = 0;
 
 static void notify(const char *level, const char *body) {
   char m[300] = "{\"type\":\"notify\",\"level\":\"";
@@ -178,18 +177,37 @@ static void drain_rns(void) {
 __attribute__((export_name("module_init")))
 int module_init(void) {
   hal_log(1, "circles loaded", 14);
+  /* The core says when a datagram landed on this wapp's own Reticulum tag.
+   * The queue and the read are unchanged -- hal_rns_recv, exactly as before.
+   * What goes is the question: drain_rns ran once a second forever, and on a
+   * quiet link the answer is "nothing" 86,400 times a day. */
+  {
+    static const char *t = "core.datagram.circles";
+    hal_event_subscribe(t, s_len(t));
+  }
   circle_init();
   return 0;
 }
 
 __attribute__((export_name("module_tick")))
+/* A CLOCK FOR A RETRY, WHICH IS THE ONLY THING LEFT THAT NEEDS ONE.
+ *
+ * circle_tick re-requests keys for circles holding messages we could not
+ * decrypt -- a catch-up after coming back online. That is time-based by
+ * nature: nothing arrives to tell us a key is still missing.
+ *
+ * What used to share this clock was drain_rns, once a second, asking whether a
+ * datagram had shown up. It has not shared it since the core started saying
+ * so; see module_handle_event. The interval is the retry's own cadence now
+ * rather than fifteen ticks of somebody else's. */
 void module_tick(void) {
-  drain_rns();
-  if (++g_ticks >= 15) { g_ticks = 0; circle_tick(); }
+  circle_tick();
 }
 
 __attribute__((export_name("module_handle_event")))
 void module_handle_event(void) {
+  /* Both queues: a datagram the core just handed us, and a UI command. */
+  drain_rns();
   char buf[4096];
   if (hal_msg_available() == 0) return;
   uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
@@ -329,6 +347,10 @@ void module_destroy(void) {
 }
 
 __attribute__((export_name("module_tick_interval_ms")))
+/* The retry's own cadence, which is what the tick is for now. It used to be
+ * 1000 because drain_rns rode the same clock; circle_tick then ran every
+ * fifteenth of them, so this is the same retry rate with fourteen fifteenths
+ * of the wake-ups gone. */
 uint32_t module_tick_interval_ms(void) {
-  return 1000;
+  return 15000;
 }

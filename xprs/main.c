@@ -825,6 +825,16 @@ static void push_detail(const char *obj) {
 /* ── Module entry points ─────────────────────────────────────────────── */
 int32_t module_init(void) {
     hal_log(6, "[xprs] listening to the air", 27);
+    /* The core says when the station table or the traffic ring moved. This
+     * screen used to ask every three seconds instead, and asking is not
+     * cheap: hal_xprs_traffic encodes the whole 200-sighting ring to JSON to
+     * answer, so a quiet room cost that encode twenty times a minute to learn
+     * nothing had changed. The event carries a revision, not the data -- we
+     * still read it the same way, just when there is a reason to. */
+    {
+        static const char *t = "core.monitor";
+        hal_event_subscribe(t, str_len(t));
+    }
     favs_load();
     push_stations();
     push_packets();
@@ -833,14 +843,33 @@ int32_t module_init(void) {
     return 0;
 }
 
-int32_t module_tick(void) {
+/* The core's state moved: redraw what depends on it. */
+static void drain_core_events(void) {
+    static char topic[48];
+    static char data[256];
+    int any = 0;
+    for (int guard = 0; guard < 16; guard++) {
+        if (hal_event_available() == 0) break;
+        if (hal_event_recv(topic, sizeof(topic) - 1, data, sizeof(data) - 1) == 0)
+            break;
+        any = 1;
+    }
+    if (!any) return;
     push_stations();
     push_packets();
-    push_remote();          /* cheap: a status poll, or the station list */
+    push_remote();
+}
+
+/* No clock. Everything this screen shows is either a core state change, which
+ * arrives on core.monitor, or a tap, which arrives as a command. */
+int32_t module_tick(void) {
     return 0;
 }
 
 int32_t module_handle_event(void) {
+    /* The host calls this both for a UI command and for a bus event, so both
+     * queues are drained here. */
+    drain_core_events();
     static char buf[2048];
     uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
     if (n == 0) return 0;
@@ -930,6 +959,7 @@ int32_t module_handle_event(void) {
     return 0;
 }
 
-int32_t module_tick_interval_ms(void) { return 3000; }
+/* 0 = no clock: see module_tick. */
+int32_t module_tick_interval_ms(void) { return 0; }
 
 void module_destroy(void) {}

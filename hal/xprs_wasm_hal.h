@@ -850,7 +850,30 @@ int32_t hal_lib_call(const char *lib_id, uint32_t lib_id_len,
                      const char *args, uint32_t args_len,
                      char *result, uint32_t result_len);
 
-/* ── Events (topic-based pub/sub between modules) ───────────────────── */
+/* ── Events (topic-based pub/sub) ───────────────────────────────────── *
+ *
+ * Two families arrive here, and a wapp subscribes to the ones it draws.
+ *
+ *   `xprs.<type>`   one topic per XPRS.md 4.2 packet type, plus
+ *                   `xprs.status.tx` for what became of a message WE sent.
+ *
+ *   `core.<thing>`  the core's own state moved and whatever you read from it
+ *                   is now stale. The event carries {"topic","rev"} and NOT
+ *                   the data: read it with the call you already use, on
+ *                   delivery instead of on a timer. Changes are coalesced, so
+ *                   a burst of packets is one event, not one per packet.
+ *
+ *       core.monitor         the station table and the traffic ring
+ *       core.rns.graph       announced Reticulum nodes and their hubs
+ *       core.mesh.topology   the BLE neighbour table and its routes
+ *       core.archive         the archive's counters and what is held
+ *
+ * A wapp that subscribes to what it draws can declare
+ * `module_tick_interval_ms() = 0` and have no clock at all. Before these
+ * topics existed there was no way to be told any of it changed, so every
+ * wapp that showed core state asked again every one to five seconds, whether
+ * or not anything had happened.
+ */
 
 /* Subscribe to a topic. Returns 0 on success, -1 on error. */
 __attribute__((import_module("hal"), import_name("event_subscribe")))

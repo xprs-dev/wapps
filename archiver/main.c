@@ -307,16 +307,42 @@ static void toggle_from(const char *buf, const char *field, const char *key) {
 /* ── Module entry points ─────────────────────────────────────────────── */
 int32_t module_init(void) {
     hal_log(6, "[archiver] up", 13);
+    /* The core says when the archive's counters moved -- once per flush, not
+     * once per row, since a backlog drain writes hundreds in one transaction
+     * and this dashboard re-reads the whole status either way. It used to ask
+     * every five seconds whether anything had happened. */
+    {
+        static const char *t = "core.archive";
+        hal_event_subscribe(t, str_len(t));
+    }
     refresh();
     return 0;
 }
 
+/* The core says its state moved; redraw what depends on it. The event carries
+ * a revision, not the data -- we read what we always read, when there is a
+ * reason to rather than on a clock. */
+static void drain_core_events(void) {
+    static char topic[48];
+    static char data[256];
+    int any = 0;
+    for (int guard = 0; guard < 16; guard++) {
+        if (hal_event_available() == 0) break;
+        if (hal_event_recv(topic, sizeof(topic) - 1, data, sizeof(data) - 1) == 0)
+            break;
+        any = 1;
+    }
+    if (any) refresh();
+}
+
+/* No clock: the archive changes when something is stored, and the core says
+ * so. */
 int32_t module_tick(void) {
-    refresh();
     return 0;
 }
 
 int32_t module_handle_event(void) {
+    drain_core_events();
     static char buf[2048];
     uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
     if (n == 0) return 0;
@@ -382,6 +408,7 @@ int32_t module_handle_event(void) {
     return 0;
 }
 
-int32_t module_tick_interval_ms(void) { return 5000; }
+/* 0 = no clock: see module_tick. */
+int32_t module_tick_interval_ms(void) { return 0; }
 
 int32_t module_destroy(void) { return 0; }

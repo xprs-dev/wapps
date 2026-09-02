@@ -170,7 +170,6 @@ static char g_seen[SEEN_MAX][20];       /* packet ids already shown (ring)   */
 static int  g_nseen = 0;
 static char g_follow[FOLLOW_MAX][CALL_MAX];
 static int  g_nfollow = 0;
-static int  g_ticks = 0;
 static char g_query[128] = "";          /* Search box                        */
 static char g_kv[1600];                 /* follow list as stored             */
 
@@ -513,6 +512,14 @@ static void clear_field(const char *field) {
 /* ── Module ──────────────────────────────────────────────────────────── */
 int32_t module_init(void) {
     hal_log(6, "[social] up — XPRS only", 24);
+    /* The feed's source is the spool, and the core says when the spool grew --
+     * once per flush, which is also once per burst. This used to be a sqlite
+     * read every 2.8 seconds on a 700ms clock, whose answer on a quiet radio
+     * is always the same sixty rows. */
+    {
+        static const char *t = "core.archive";
+        hal_event_subscribe(t, str_len(t));
+    }
     follows_load();
     /* Nothing is pushed here. A ui.* message sent before the page has
      * attached is read by nobody, and the seen-ring would still have marked
@@ -521,16 +528,27 @@ int32_t module_init(void) {
     return 0;
 }
 
-int32_t module_tick(void) {
-    g_ticks++;
+/* The spool grew: pull what is new into the feed. */
+static void drain_core_events(void) {
+    static char topic[48];
+    static char data[256];
+    int any = 0;
+    for (int guard = 0; guard < 16; guard++) {
+        if (hal_event_available() == 0) break;
+        if (hal_event_recv(topic, sizeof(topic) - 1, data, sizeof(data) - 1) == 0)
+            break;
+        any = 1;
+    }
+    if (!any) return;
     /* Only while somebody is looking: with the page detached these appends go
      * nowhere, and the seen-ring would eat them (see module_init). */
-    if (!hal_ui_attached()) return 0;
-    /* The spool is a local sqlite read, but it is still a read: once every
-     * few seconds is plenty for a feed whose source is a radio. */
-    if (g_ticks % 4 == 0)
-        feed_from_spool("activity",
-            "{\"limit\":60,\"types\":[\"status\",\"reaction\"]}", "");
+    if (!hal_ui_attached()) return;
+    feed_from_spool("activity",
+        "{\"limit\":60,\"types\":[\"status\",\"reaction\"]}", "");
+}
+
+/* No clock: a feed changes when a packet is spooled, and the core says so. */
+int32_t module_tick(void) {
     return 0;
 }
 
@@ -541,6 +559,7 @@ int32_t module_handle_event(void) {
      * read as empty: no status, no error, nothing anywhere. Sized for the map
      * with room to spare, and a truncated read is now visible rather than
      * silently short. */
+    drain_core_events();
     static char buf[24576];
     uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
     if (n == 0) return 0;
@@ -663,6 +682,7 @@ int32_t module_handle_event(void) {
     return 0;
 }
 
-int32_t module_tick_interval_ms(void) { return 700; }
+/* 0 = no clock: see module_tick. */
+int32_t module_tick_interval_ms(void) { return 0; }
 
 void module_destroy(void) {}

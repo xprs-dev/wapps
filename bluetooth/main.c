@@ -156,19 +156,50 @@ static void tick_refresh(int force) {
 /* ── Module entry points ─────────────────────────────────────────────── */
 int32_t module_init(void) {
     hal_log(6, "[bluetooth] mesh view up", 24);
+    /* The core says when a beacon actually moved the neighbour table -- and
+     * only then: beacons repeat on a cadence, so most of them say nothing new
+     * and republishing on every one would be the 2-second poll with extra
+     * steps. */
+    {
+        static const char *t = "core.mesh.topology";
+        hal_event_subscribe(t, str_len(t));
+    }
     tick_refresh(1);
     return 0;
 }
 
+/* The core says its state moved; redraw what depends on it. The event carries
+ * a revision, not the data -- we read what we always read, when there is a
+ * reason to rather than on a clock. */
+static void drain_core_events(void) {
+    static char topic[48];
+    static char data[256];
+    int any = 0;
+    for (int guard = 0; guard < 16; guard++) {
+        if (hal_event_available() == 0) break;
+        if (hal_event_recv(topic, sizeof(topic) - 1, data, sizeof(data) - 1) == 0)
+            break;
+        any = 1;
+    }
+    if (any) tick_refresh(1);
+}
+
+/* THIS ONE KEEPS A CLOCK, AND IT IS THE ONLY HONEST REASON TO HAVE ONE.
+ *
+ * The rows carry "seen 40s ago" chips, and that number goes up because time
+ * passes, not because anything arrived. No event can carry a fact about the
+ * absence of events. Ten seconds is the chip's own resolution.
+ *
+ * What is NOT here any more is the other four fifths of the old cadence: the
+ * topology re-read that ran every two seconds whether or not the table had
+ * moved. That arrives on core.mesh.topology now. */
 int32_t module_tick(void) {
-    /* Every 5th tick (~10 s) force a re-push even when topology is unchanged,
-     * so the "seen Xs ago" freshness chips keep counting up. */
-    static int n = 0;
-    tick_refresh(++n % 5 == 0);
+    tick_refresh(1);
     return 0;
 }
 
 int32_t module_handle_event(void) {
+    drain_core_events();
     static char buf[2048];
     uint32_t n = hal_msg_recv(buf, sizeof(buf) - 1);
     if (n == 0) return 0;
@@ -200,6 +231,7 @@ int32_t module_handle_event(void) {
     return 0;
 }
 
-int32_t module_tick_interval_ms(void) { return 2000; }
+/* Only the age chips need a clock, at their own resolution. */
+int32_t module_tick_interval_ms(void) { return 10000; }
 
 void module_destroy(void) {}

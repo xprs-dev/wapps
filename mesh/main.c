@@ -311,17 +311,43 @@ static void handle_command(const char *cmd, const char *full) {
 /* ── Module entry points ─────────────────────────────────────────────── */
 void module_init(void) {
     hal_log(1, "[mesh] init", 11);
+    /* The core says when a Reticulum announce moved the graph. This screen
+     * used to rebuild it every two seconds regardless -- hal_rns_nodes and
+     * hal_rns_hubs both encode their whole answer to JSON, so an idle mesh
+     * cost two full graph encodes a second to learn nothing had changed.
+     * Coalescing matters here more than anywhere: a hub dumps its cached
+     * announce table on connect, hundreds of announces in a second, and this
+     * is told once. */
+    {
+        static const char *t = "core.rns.graph";
+        hal_event_subscribe(t, str_len(t));
+    }
     load_state();
-}
-
-void module_tick(void) {
-    /* Stream a fresh frame. Before the page signals "ready" we still refresh
-     * the host-native Hubs list + status so those tabs are live immediately;
-     * the graph push is cheap and harmless (buffered host-side until ready). */
     push_all();
 }
 
+/* The core says its state moved; redraw what depends on it. The event carries
+ * a revision, not the data -- we read what we always read, when there is a
+ * reason to rather than on a clock. */
+static void drain_core_events(void) {
+    static char topic[48];
+    static char data[256];
+    int any = 0;
+    for (int guard = 0; guard < 16; guard++) {
+        if (hal_event_available() == 0) break;
+        if (hal_event_recv(topic, sizeof(topic) - 1, data, sizeof(data) - 1) == 0)
+            break;
+        any = 1;
+    }
+    if (any) push_all();
+}
+
+/* No clock: the graph changes when an announce arrives, and the core says so. */
+void module_tick(void) {
+}
+
 void module_handle_event(void) {
+    drain_core_events();
     /* Big enough to hold a composed 1:1 message (node_message) plus its JSON
      * envelope — caps a DM body at ~3.5 KB. Other events are tiny. */
     static char buf[4096];
@@ -341,4 +367,5 @@ void module_destroy(void) {
     hal_log(1, "[mesh] destroy", 14);
 }
 
-uint32_t module_tick_interval_ms(void) { return 2000; }
+/* 0 = no clock: see module_tick. */
+uint32_t module_tick_interval_ms(void) { return 0; }
