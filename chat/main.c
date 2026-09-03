@@ -627,6 +627,9 @@ static int notif_dup(const char *from, const char *text) {
 }
 
 static int is_group(const char *id);       /* '#' prefix; defined below */
+static int convo_renderable(const char *id);   /* defined with the convo store */
+static int cmd_field(const char *buf, const char *key, char *out, unsigned m);
+static int lxmf_callsign(const char *dest, char *out, unsigned cap);
 /* [mid] is the message's durable id where the caller has one. It becomes the
  * notification's dedupe tag, which the host honours ACROSS RESTARTS -- and a
  * restart is exactly when this matters: every start re-ingests the backlog and
@@ -640,10 +643,7 @@ static void notify_msg(const char *title, const char *from, const char *text,
   /* Only what this wapp can actually open and show. A 1:1 keyed by callsign is
    * Mail's; notifying it here would double up and then land the user in a wapp
    * with no thread to show them. */
-  if (!(is_group(title) || s_pre(title, "lxmf:") ||
-        s_eq(title, "Activity"))) {
-    return;
-  }
+  if (!(convo_renderable(title) || s_eq(title, "Activity"))) return;
   if (notif_dup(from, text)) return;
   /* Show WHO wrote, not the address they wrote from: an LXMF thread id is
    * "lxmf:" plus 32 hex characters, which told the user nothing except that
@@ -909,13 +909,10 @@ static void convo_msg(const char *id, const char *dir, const char *from,
                       const char *via,
                       const char *mid, const char *parent, const char *auth, int enc,
                       int priv) {
-  /* GROUPS ONLY (plus rooms, plus LXMF peers). A NOSTR 1:1 message still
-   * reaches this wapp over BLE/APRS (the radios do not know the difference),
-   * but rendering it here would rebuild the second inbox we just removed — the
-   * Mail wapp owns kind-4 1:1. LXMF peers are the exception: NomadNet
-   * users have no kind-4 inbox anywhere, so their DMs render here. */
+  /* Only what this wapp can open: a group, a peer by callsign, or a NomadNet
+   * peer with no callsign (see is_callsign_id). */
   uint64_t stamp = g_msg_epoch; g_msg_epoch = 0;  /* one message, one stamp */
-  if (!is_group(id) && !s_pre(id, "lxmf:")) return;
+  if (!convo_renderable(id)) return;
   char t[8];
   if (stamp) fmt_time_at(t, stamp); else fmt_time(t);
   char m[640] = "{\"type\":\"ui.convo.msg\",\"id\":\"";
@@ -1080,7 +1077,7 @@ static void rpend_flush_read(const char *convo) {
 /* User opened a 1:1 conversation → send read receipts for its pending msgs. */
 static void do_convo_open(const char *buf) {
   /* 48, not 16: an LXMF conversation id is "lxmf:" + 32 hex. */
-  char convo[48] = ""; jstr(buf, "conversations_convo", convo, sizeof(convo));
+  char convo[48] = ""; cmd_field(buf, "convo", convo, sizeof(convo));
   rpend_flush_read(convo);
 }
 
@@ -1356,8 +1353,6 @@ static int is_lxmf(const char *id) { return id && s_pre(id, "lxmf:"); }
  *
  * No timer. It is redrawn when the conversation set changes, like everything
  * else in this wapp. */
-static int convo_renderable(const char *id);   /* defined with the convo store */
-
 static void rail_item(char *out, unsigned cap, const char *id,
                       const char *name) {
   s_cat(out, "{\"id\":\"", cap); jesc(out, cap, id);
@@ -1399,6 +1394,14 @@ static void render_rail(void) {
   }
   s_cat(rail, "]}", sizeof(rail));
   hal_msg_send(rail, s_len(rail));
+  /* Say what was drawn, by id. Three rows titled "X1WATT" are three ids, and
+   * the title is the one thing that does not tell them apart. Once per redraw,
+   * and a redraw is a set change, not a message. */
+  { char lg[900] = "[chat] rail:";
+    for (int k = 0; k < cnt; k++) {
+      s_cat(lg, " ", sizeof(lg)); s_cat(lg, g_convo_ids[idx[k]], sizeof(lg));
+    }
+    hal_log(1, lg, s_len(lg)); }
 }
 
 /* Our own LXMF delivery dest — what a peer sees as `from`, and therefore half
@@ -1524,8 +1527,25 @@ static void lxmf_title(const char *id, char *out, unsigned osz) {
  * messages yet" forever. The real thread sat right beside it under its
  * "lxmf:<dest>" id. Refuse those ids, and remove any ghost an older build
  * already wrote into the host's store. */
+/* A 1:1 IS KEYED BY CALLSIGN.
+ *
+ * It was keyed two ways at once, and neither worked in both directions. An
+ * inbound message opened a row called "lxmf:<delivery dest>" (titled with the
+ * callsign, so it LOOKED right); replying from it handed that dest to
+ * hal_xprs_message as the recipient, which composed `d:LXMF:9FE0…` -- a packet
+ * for nobody. A row opened from a callsign could send, but every render guard
+ * in this file refused anything that was not `#…` or `lxmf:…`, so the bubble
+ * never appeared, and convo_drop_ghost deleted the row at the next start.
+ * The user saw two "X1WATT" rows and could not tell which one worked. Neither.
+ *
+ * The core addresses a station by callsign (hal_xprs_message) and names the
+ * sender's callsign on every delivery row (`call`). So that is the id. An
+ * `lxmf:` row survives only for a NomadNet peer that has no callsign at all. */
+static int is_callsign_id(const char *id) {
+  return id && id[0] != '#' && !is_lxmf(id) && xprs_is_station(id);
+}
 static int convo_renderable(const char *id) {
-  return id && id[0] && (is_group(id) || is_lxmf(id));
+  return id && id[0] && (is_group(id) || is_lxmf(id) || is_callsign_id(id));
 }
 
 static void convo_drop_ghost(const char *id) {
@@ -1537,7 +1557,7 @@ static void convo_drop_ghost(const char *id) {
 }
 
 static void convo_touch(const char *id, const char *preview, int select) {
-  if (!is_group(id) && !is_lxmf(id)) return;
+  if (!convo_renderable(id)) return;
   convo_remember(id);
   recent_touch(id);   /* traffic counts as recency, and survives a restart */
   int global = 0; for (int i = 1; id[i]; i++) if (id[i] == '*') global = 1;
@@ -2167,8 +2187,33 @@ static void convo_send_core(const char *buf, const char *id_in,
    * labelled with that rather than with what was asked for: 36.8 makes
    * plaintext a disclosure, so a message that could not be sealed must never
    * be drawn as private. */
+  /* The recipient is a CALLSIGN. An "lxmf:<dest>" row -- the id every 1:1
+   * used to be opened under -- names a delivery dest, and handing that to the
+   * core's send door composed `d:LXMF:9FE0…`, a packet for nobody, reported
+   * as "TX message". Resolve it through the host's directory: a peer that has
+   * ever beaconed has a callsign there, and the conversation moves to it. */
+  char to[24] = "";
+  if (is_callsign_id(id)) {
+    s_cpy(to, id, sizeof(to));
+  } else if (is_lxmf(id) && lxmf_callsign(id + 5, to, sizeof(to))) {
+    /* Same peer, right key: from here on the thread lives under the callsign
+     * and the lxmf row is retired, so the rail shows one row for one person.
+     * select=1 moves the host's open thread to the new row BEFORE the old one
+     * goes -- the user is looking at it, and a thread that vanishes under a
+     * message they just typed is a message that vanished. */
+    convo_touch(to, text, 1);
+    convo_forget(id);
+    convo_drop_ghost(id);
+    groups_save();
+    s_cpy(id, to, sizeof(id));
+  } else {
+    convo_sysnote(id, "This peer has no callsign yet, so there is nowhere to "
+                      "send. It appears once they beacon their identity.");
+    notify("warning", "No callsign for this peer");
+    return;
+  }
   char mid[8] = "";
-  int32_t form = hal_xprs_message(id, s_len(id), text, s_len(text),
+  int32_t form = hal_xprs_message(to, s_len(to), text, s_len(text),
                                   priv ? 1u : 0u, mid, sizeof(mid));
   if (form == -1) {
     /* The core has just asked for the key (18.1). Refusing is the point: the
@@ -2192,10 +2237,28 @@ static void convo_send_core(const char *buf, const char *id_in,
   status(form == 1 ? "TX (private)" : "TX message");
 }
 
+/* THE WIDGET IS CALLED "rooms", SO ITS FIELDS ARE rooms_*.
+ *
+ * home.ui.json declares one group, {"name":"rooms","$type":"rooms"}, and the
+ * host derives every command and field from that name: rooms_send with
+ * rooms_convo and rooms_input, rooms_open, rooms_close… This wapp read
+ * conversations_convo and conversations_input -- the names of the group it
+ * used to declare -- so a message typed on the screen reached the dispatcher
+ * as rooms_send, matched nothing, and was dropped without a word. The input
+ * cleared, no bubble appeared, and the bench passed because the API test
+ * sent conversations_send by hand. The old names stay accepted so nothing
+ * driving this wapp from outside has to change. */
+static int cmd_field(const char *buf, const char *key, char *out, unsigned m) {
+  char k[48] = "rooms_"; s_cat(k, key, sizeof(k));
+  if (jstr(buf, k, out, m) && out[0]) return 1;
+  s_cpy(k, "conversations_", sizeof(k)); s_cat(k, key, sizeof(k));
+  return jstr(buf, k, out, m);
+}
+
 static void do_convo_send(const char *buf) {
   char id[40] = "", text[400] = "";
-  jstr(buf, "conversations_convo", id, sizeof(id));
-  jstr(buf, "conversations_input", text, sizeof(text));
+  cmd_field(buf, "convo", id, sizeof(id));
+  cmd_field(buf, "input", text, sizeof(text));
   if (!id[0] || !text[0]) return;
   convo_send_core(buf, id, text);
 }
@@ -2206,7 +2269,7 @@ static void do_convo_send(const char *buf) {
  * flips too. */
 static void do_convo_private(const char *buf) {
   char id[40] = "";
-  jstr(buf, "conversations_convo", id, sizeof(id));
+  cmd_field(buf, "convo", id, sizeof(id));
   if (!id[0] || id[0] == '#') return;       /* 1:1 only */
   peer_note(id);                             /* opting in is an interaction: promote a key
                                                 we only overheard (parked) over RNS/APRS */
@@ -2315,12 +2378,12 @@ static void do_add_group(void) { prompt_group(); }
  * wire): hide one message, block / unblock a station. */
 static void do_convo_hide(const char *buf) {
   char id[40] = "", key[16] = "";
-  jstr(buf, "conversations_convo", id, sizeof(id));
-  jstr(buf, "conversations_hidekey", key, sizeof(key));
+  cmd_field(buf, "convo", id, sizeof(id));
+  cmd_field(buf, "hidekey", key, sizeof(key));
   hide_add(id, key);
 }
 static void do_convo_block(const char *buf) {
-  char c[16] = ""; jstr(buf, "conversations_blockcall", c, sizeof(c));
+  char c[16] = ""; cmd_field(buf, "blockcall", c, sizeof(c));
   if (!c[0]) return;
   block_add(c);
   notify("info", "Blocked — you won't see their messages");
@@ -2331,7 +2394,7 @@ static void do_convo_block(const char *buf) {
  * persist, so the APRS-IS filter drops it and deliver_bulletin no longer
  * delivers it. The host hides the row on its side. */
 static void do_convo_close(const char *buf) {
-  char id[40] = ""; jstr(buf, "conversations_convo", id, sizeof(id));
+  char id[40] = ""; cmd_field(buf, "convo", id, sizeof(id));
   if (!id[0]) return;
   convo_forget(id);
   if (id[0] == '#') {
@@ -2645,6 +2708,27 @@ static void gseen_load(void) {
 static const char *fnd_next_obj(const char *p, char *slice, unsigned m);
 
 /* One rail row's JSON. [people] < 0 means "do not claim a number". */
+/* The callsign the host's directory knows for an LXMF delivery dest, or 0.
+ * One read, one walk; called on a send, never on a clock. */
+static int lxmf_callsign(const char *dest, char *out, unsigned cap) {
+  static char dir[8192];
+  out[0] = 0;
+  int32_t n = hal_people_directory(dest, s_len(dest), dir, sizeof(dir) - 1);
+  if (n <= 0) return 0;
+  dir[n] = 0;
+  char slice[900];
+  const char *p = fnd_next_obj(dir, slice, sizeof(slice));
+  while (p) {
+    char d[70]; jstr(slice, "dest", d, sizeof(d));
+    if (s_eq(d, dest)) {
+      jstr(slice, "callsign", out, cap);
+      return out[0] && xprs_is_station(out);
+    }
+    p = fnd_next_obj(p, slice, sizeof(slice));
+  }
+  return 0;
+}
+
 /* Is this LXMF peer announcing right now? One directory read per rail render;
  * the host caches the registry, and the rail renders on a slow cadence. */
 /* ── Rooms widget commands (Discord-like layout) ── */
@@ -2947,7 +3031,7 @@ static void lxname_resolve(const char *dest) {
 static void groups_save(void) {
   char buf[1200]; buf[0] = 0;
   for (int i = 0; i < g_convo_n; i++)
-    if (g_convo_ids[i][0] == '#' || is_lxmf(g_convo_ids[i])) {
+    if (convo_renderable(g_convo_ids[i])) {
       s_cat(buf, g_convo_ids[i], sizeof(buf)); s_cat(buf, ";", sizeof(buf));
     }
   hal_kv_set("groups", 6, buf, s_len(buf));
@@ -3037,6 +3121,15 @@ static void groups_load(void) {
   int drop_global = 0;
   { char f[2];
     if (hal_kv_get("xglobal", 7, f, sizeof(f) - 1) == 0) drop_global = 1; }
+  /* One-time: forget every "lxmf:<dest>" row. A 1:1 is keyed by callsign now
+   * (is_callsign_id); the rows keyed by delivery dest were the ones that
+   * could not reply, and a device that had talked to a peer across two of
+   * that peer's identities showed three rows with one name. Its own flag,
+   * for the same reason as xglobal. A peer that still has no callsign gets a
+   * fresh row the next time they write. */
+  int drop_lxmf = 0;
+  { char f[2];
+    if (hal_kv_get("xlxmf", 5, f, sizeof(f) - 1) == 0) drop_lxmf = 1; }
   char id[40]; int j = 0;
   for (unsigned i = 0; i <= n; i++) {
     char ch = (i < n) ? buf[i] : ';';
@@ -3063,7 +3156,7 @@ static void groups_load(void) {
       /* Drop malformed lxmf rows written by an earlier build (the separator
        * bug welded the peer's name onto the address). They are unopenable and
        * un-messageable; removing the row also removes its phantom unread. */
-      if (is_lxmf(id) && !is_hex32(id + 5)) {
+      if (is_lxmf(id) && (drop_lxmf || !is_hex32(id + 5))) {
         const char *rm = "{\"type\":\"ui.convo.remove\",\"id\":\"";
         char m[160]; s_cpy(m, rm, sizeof(m));
         jesc(m, sizeof(m), id);
@@ -3072,7 +3165,7 @@ static void groups_load(void) {
         j = 0;
         continue;
       }
-      if (id[0] == '#' || is_lxmf(id)) convo_ensure(id);
+      if (convo_renderable(id)) convo_ensure(id);
       j = 0;
     }
     else if (j < 39) id[j++] = ch;
@@ -3087,6 +3180,12 @@ static void groups_load(void) {
     groups_save();          /* persist the list without #GLOBAL, once */
     hal_kv_set("xglobal", 7, "1", 1);
     const char *lg = "[chat] removed the Global chat room";
+    hal_log(1, lg, s_len(lg));
+  }
+  if (drop_lxmf) {
+    groups_save();          /* persist the list without lxmf: rows, once */
+    hal_kv_set("xlxmf", 5, "1", 1);
+    const char *lg = "[chat] removed the dest-keyed 1:1 rows (callsign-keyed now)";
     hal_log(1, lg, s_len(lg));
   }
   /* The NomadNet bridge channel is NOT pre-created any more: an empty row for
@@ -3705,12 +3804,26 @@ static void on_core_event(const char *topic, const char *row) {
   if (title[0] == '#') {
     group_convo_id(title + 1, cid, sizeof(cid));
     if (!g_chan_nomad || !chan_enabled(cid)) return;
+  } else if (call[0]) {
+    /* A station: the conversation is the callsign, the same value the core
+     * takes as a recipient. If an older build opened an "lxmf:<dest>" row for
+     * this same peer, it is retired here rather than left beside the real one
+     * -- two rows with one title, one of which could not reply, is what this
+     * replaces. */
+    s_cpy(cid, call, sizeof(cid));
+    char old[72] = "lxmf:"; s_cat(old, from, sizeof(old));
+    if (convo_known(old)) {
+      convo_forget(old);
+      convo_drop_ghost(old);
+      groups_save();
+    }
   } else {
+    /* No callsign: a NomadNet peer, addressable only by its delivery dest. */
     s_cpy(cid, "lxmf:", sizeof(cid));
     s_cat(cid, from, sizeof(cid));
   }
   if (!convo_known(cid)) {
-    if (title[0] != '#') lxname_resolve(from);
+    if (title[0] != '#' && !call[0]) lxname_resolve(from);
     convo_ensure(cid);
     groups_save();
   }
@@ -3850,11 +3963,10 @@ void module_init(void) {
   rns_dest_load(); /* restore npub -> {RNS delivery dests} (Reticulum addressing) */
   cpriv_load();    /* restore which 1:1 conversations are private (Reticulum-only) */
   convo_ensure(XROOM_LOCAL);   /* the scope room exists before the first word */
-  /* Sweep out callsign-keyed ghost rows written by older builds: every id we
-   * hold as a bare callsign is, by definition, not something this wapp can
-   * render. Cheap, idempotent, and it heals a store the user is looking at. */
-  for (int i = 0; i < g_cpriv_n; i++) convo_drop_ghost(g_cpriv[i]);
-  for (int i = 0; i < g_pk_n; i++) convo_drop_ghost(g_pk_call[i]);
+  /* NO ghost sweep of callsign rows. There used to be one here, on the theory
+   * that a bare callsign "is, by definition, not something this wapp can
+   * render" -- and it deleted, at every start, exactly the row a 1:1 now lives
+   * in. */
   pk_render();     /* populate the Keys list view from the restored database */
   /* Bridge restored callsign->pubkey to the host so the Activity feed/profile
    * show npubs immediately, not only after the next live beacon. */
@@ -3921,13 +4033,14 @@ void module_handle_event(void) {
     jstr(buf, "type", typ, sizeof(typ));
     if (!s_eq(typ, "action") || !jstr(buf, "action", cmd, sizeof(cmd))) return;
   }
-  else if (s_eq(cmd, "conversations_send")) do_convo_send(buf);
-  else if (s_eq(cmd, "conversations_open")) do_convo_open(buf);
-  else if (s_eq(cmd, "conversations_private")) do_convo_private(buf);
-  else if (s_eq(cmd, "conversations_form")) do_convo_form();
-  else if (s_eq(cmd, "conversations_hide")) do_convo_hide(buf);
-  else if (s_eq(cmd, "conversations_block")) do_convo_block(buf);
-  else if (s_eq(cmd, "conversations_close")) do_convo_close(buf);
+  /* The rooms widget's own names first (see cmd_field), the old ones after. */
+  else if (s_eq(cmd, "rooms_send") || s_eq(cmd, "conversations_send")) do_convo_send(buf);
+  else if (s_eq(cmd, "rooms_open") || s_eq(cmd, "conversations_open")) do_convo_open(buf);
+  else if (s_eq(cmd, "rooms_private") || s_eq(cmd, "conversations_private")) do_convo_private(buf);
+  else if (s_eq(cmd, "rooms_form") || s_eq(cmd, "conversations_form")) do_convo_form();
+  else if (s_eq(cmd, "rooms_hide") || s_eq(cmd, "conversations_hide")) do_convo_hide(buf);
+  else if (s_eq(cmd, "rooms_block") || s_eq(cmd, "conversations_block")) do_convo_block(buf);
+  else if (s_eq(cmd, "rooms_close") || s_eq(cmd, "conversations_close")) do_convo_close(buf);
   else if (s_eq(cmd, "new_chat")) do_new_chat();
   else if (s_eq(cmd, "add_group")) do_add_group();
   else if (s_eq(cmd, "rooms_newchat")) do_rooms_newchat();
