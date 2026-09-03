@@ -179,6 +179,7 @@
   {"file":"chat/chat-0.4.8.wapp","id":"tools.geogram.chat","version":"0.4.8","size":253058,"title":"Chat","description":"Chat - encrypted messaging, live map and beacons over Reticulum, Bluetooth mesh and NOSTR relays (legacy APRS-IS optional)."},
   {"file":"chat/chat-0.4.9.wapp","id":"tools.geogram.chat","version":"0.4.9","size":253562,"title":"Chat","description":"Chat - encrypted messaging, live map and beacons over Reticulum, Bluetooth mesh and NOSTR relays (legacy APRS-IS optional)."},
   {"file":"chat/chat-0.5.8.wapp","id":"tools.xprs.chat","version":"0.5.8","size":145668,"title":"Chat","description":"Chat - encrypted messaging, live map and beacons over Reticulum, Bluetooth mesh and NOSTR relays (legacy APRS-IS optional)."},
+  {"file":"chat/chat-0.6.0.wapp","id":"tools.xprs.chat","version":"0.6.0","size":152282,"title":"Chat","description":"Chat - encrypted messaging, live map and beacons over Reticulum, Bluetooth mesh and NOSTR relays (legacy APRS-IS optional)."},
   {"file":"circles/circles-0.1.0.wapp","id":"tools.geogram.circles","version":"0.1.0","size":46172,"title":"Circles","description":"Private, encrypted group chat over Reticulum."},
   {"file":"circles/circles-0.10.0.wapp","id":"tools.geogram.circles","version":"0.10.0","size":82551,"title":"Circles","description":"Private, encrypted group chat over Reticulum."},
   {"file":"circles/circles-0.11.0.wapp","id":"tools.geogram.circles","version":"0.11.0","size":86688,"title":"Circles","description":"Private, encrypted group chat over Reticulum."},
