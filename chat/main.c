@@ -121,10 +121,28 @@ static int jfield(const char *row, const char *key, char *out, unsigned m) {
   char pat[40]; pat[0] = '['; pat[1] = '"'; pat[2] = 0;
   s_cat(pat, key, sizeof(pat)); s_cat(pat, "\",\"", sizeof(pat));
   unsigned pl = s_len(pat);
-  for (const char *q = arr; *q && *q != ']'; q++) {
-    /* `]` ends the pair array; a `]` inside a value cannot reach here because
-     * the value scan below consumes it. */
-    if (*q == ']' && q[1] == ']') break;
+  /* WALK THE PAIRS. The scan used to be `for (q = arr; *q && *q != ']'; q++)`,
+   * and `]` is the end of the FIRST PAIR -- `["t","message"],["f","X3WWAJ"]…`
+   * -- so it could only ever find a key in field one. Every caller reading `m:`
+   * got nothing, and on_core_packet's very first act is
+   *
+   *     if (!jfield(row, "m", m, sizeof(m)) || !m[0]) return;
+   *
+   * so EVERY packet the core delivered was dropped without a word. The room
+   * looked empty because nothing could reach it, not because nobody spoke.
+   *
+   * Values are quoted and may contain a `]`, so the walk skips strings rather
+   * than scanning bytes: a `]` inside somebody's message must not end the
+   * array. Two `]` in a row -- the last pair's and the array's -- do. */
+  if (*arr == ']') return 0;                    /* "fields":[] — no fields */
+  for (const char *q = arr; *q; q++) {
+    if (*q == ']' && q[1] == ']') break;        /* end of the pair array */
+    if (*q == '"') {                            /* skip a quoted value whole */
+      for (q++; *q && *q != '"'; q++) if (*q == '\\' && q[1]) q++;
+      if (!*q) break;
+      continue;
+    }
+    if (*q != '[') continue;                    /* only a pair can start here */
     unsigned i = 0;
     while (i < pl && q[i] == pat[i]) i++;
     if (i != pl) continue;
@@ -681,9 +699,12 @@ static int g_convo_n = 0;
 /* ── The scope room (XPRS 13.11): #LOCAL ──────────────────────────────────
  * One built-in conversation carried as plain t:message broadcasts through the
  * host's XPRS lane -- the same wires the ESP32 hotspot chat and every other
- * station speak, so writing here is writing there. Sends carry scope:local:
- * short-range bearers only, never gated to the internet. Receive is a poll of
- * the host's archive (hal_xprs_history), deduplicated by row id.
+ * station speak, so writing here is writing there. Sending is
+ * hal_xprs_broadcast(text, "local"): the core composes, signs, splits and
+ * keeps it on the short-range bearers, never gated to the internet (13.11.1).
+ * Receiving is the event bus, in on_core_packet -- undirected traffic with
+ * scope:local. It used to be a poll of hal_xprs_history instead, which is why
+ * the room went silent when the polling was removed and nothing replaced it.
  *
  * #GLOBAL is GONE. It was the unmarked room that went everywhere, and an
  * unmarked broadcast is exactly what nothing can repair: no d:, so no custody,
@@ -796,9 +817,21 @@ static void xgroups_restore(void) {
   xgroup_parse(g_xgroup_kv);
   xgroups_publish();
 }
-/* The ring MUST stay larger than XROOM_LIMIT below: the poll re-walks the same
- * window every four seconds, so a ring that cannot hold a whole window would
- * forget the oldest row just in time to re-add it as a new bubble. */
+/* Section 5 identifiers already rendered in the Local room, so one message is
+ * one bubble.
+ *
+ * It catches two different repeats with one test. Our OWN post: the core hands
+ * the identifier back from hal_xprs_broadcast, we register it here, and the
+ * copy that comes off our own radio is recognised rather than drawn twice.
+ * And SOMEBODY ELSE'S post heard on two bearers: the identifier is derived
+ * from the packet and never transmitted (section 5), so the Bluetooth copy and
+ * the LAN copy carry the same one.
+ *
+ * 192 deep. It used to be sized against a history poll's window -- the poll
+ * re-walked the same rows every four seconds, so a ring smaller than a window
+ * forgot the oldest row just in time to redraw it. That poll is gone; the ring
+ * now only has to outlive the spread between one packet arriving on two
+ * bearers, and 192 is generous for that. */
 #define XROOM_SEEN 192
 static char g_xroom_seen[XROOM_SEEN][12];
 static int  g_xroom_seen_n;
@@ -810,9 +843,17 @@ static int xroom_seen(const char *mid) {
   return 0;
 }
 
+static void render_rail(void);   /* the rail redraws when this set changes */
+
 static void convo_remember(const char *id) {
   for (int i = 0; i < g_convo_n; i++) if (s_eq(g_convo_ids[i], id)) return;
-  if (g_convo_n < 32) s_cpy(g_convo_ids[g_convo_n++], id, 40);
+  if (g_convo_n >= 32) return;
+  s_cpy(g_convo_ids[g_convo_n++], id, 40);
+  /* A conversation not on the rail cannot be opened, so the two are one act.
+   * Here and not in convo_touch: touching happens per MESSAGE, and redrawing
+   * the whole rail on every bubble would be six kilobytes of JSON to say
+   * nothing changed. */
+  render_rail();
 }
 /* Drop [id] from the subscribed set (so we stop listening to that group/DM). */
 static void convo_forget(const char *id) {
@@ -820,6 +861,7 @@ static void convo_forget(const char *id) {
     if (s_eq(g_convo_ids[i], id)) {
       for (int j = i; j < g_convo_n - 1; j++) s_cpy(g_convo_ids[j], g_convo_ids[j + 1], 40);
       g_convo_n--;
+      render_rail();
       return;
     }
   }
@@ -1199,6 +1241,11 @@ static void recent_save(void) {
   }
   hal_kv_set("recent", 6, b, s_len(b));
 }
+static unsigned recent_of(const char *id) {
+  for (int i = 0; i < g_recent_n; i++)
+    if (s_eq(g_recent_id[i], id)) return (unsigned)g_recent_ts[i];
+  return 0;
+}
 static void recent_touch(const char *id) {
   if (!id || !id[0]) return;
   uint64_t now = hal_time_epoch();
@@ -1291,6 +1338,68 @@ static int is_group(const char *id) { return id && id[0] == '#'; }
  * NOSTR-1:1 exclusion above does not apply: LXMF peers have no kind-4 inbox
  * anywhere — Chat IS their conversation surface. */
 static int is_lxmf(const char *id) { return id && s_pre(id, "lxmf:"); }
+
+/* ── The rail: the ONLY way a conversation is reachable ──────────────────
+ *
+ * The Chat screen is one widget -- screens/home.ui.json declares a single
+ * {"$":"group","name":"rooms","$type":"rooms"} -- and the host fills it from
+ * exactly one message, ui.rooms.set. render_rail() and the whole of room.c
+ * were deleted with the NOSTR rooms, and nothing emitted that message
+ * afterwards, so the screen had NO ROWS AT ALL: every conversation this wapp
+ * held was unreachable, the Local room included. That is what "the Local chat
+ * is gone" looked like from the outside.
+ *
+ * This is the old renderer minus the room tree it used to hang under. There is
+ * no "Main room" and no parent/child nesting: this client's conversations are
+ * a flat list -- the Local room, the groups it has joined, and the peers it
+ * talks to -- so the rail is that list, most recently used first.
+ *
+ * No timer. It is redrawn when the conversation set changes, like everything
+ * else in this wapp. */
+static int convo_renderable(const char *id);   /* defined with the convo store */
+
+static void rail_item(char *out, unsigned cap, const char *id,
+                      const char *name) {
+  s_cat(out, "{\"id\":\"", cap); jesc(out, cap, id);
+  s_cat(out, "\",\"name\":\"", cap); jesc(out, cap, name);
+  s_cat(out, "\",\"depth\":0", cap);
+  { char tb[16]; u_itoa(recent_of(id), tb);
+    s_cat(out, ",\"seen\":", cap); s_cat(out, tb, cap); }
+  s_cat(out, "}", cap);
+}
+
+static void render_rail(void) {
+  static char rail[6000];
+  s_cpy(rail, "{\"type\":\"ui.rooms.set\",\"field\":\"rooms\",\"rooms\":[",
+        sizeof(rail));
+  /* Most recently used first -- the rail's whole job is to lead with what you
+   * actually open. Insertion sort over at most 32 ids, on an event, so the
+   * quadratic shape costs nothing and needs no scratch array. */
+  int idx[32], cnt = 0;
+  for (int i = 0; i < g_convo_n && cnt < 32; i++) idx[cnt++] = i;
+  for (int a = 0; a < cnt; a++)
+    for (int b = a + 1; b < cnt; b++)
+      if (recent_of(g_convo_ids[idx[b]]) > recent_of(g_convo_ids[idx[a]])) {
+        int t = idx[a]; idx[a] = idx[b]; idx[b] = t;
+      }
+  int first = 1;
+  for (int k = 0; k < cnt; k++) {
+    const char *id = g_convo_ids[idx[k]];
+    /* Exactly what this wapp can draw, and the same test convo_msg applies
+     * before it renders a bubble: a row that opens onto nothing is worse than
+     * no row, and that pairing is what convo_drop_ghost exists to clean up. */
+    if (!convo_renderable(id)) continue;
+    /* A channel the user switched off stays off the rail. */
+    if (is_lxmf(id) ? !g_chan_nomad : !chan_enabled(id)) continue;
+    char title[80];
+    convo_title(id, title, sizeof(title));
+    if (!first) s_cat(rail, ",", sizeof(rail));
+    first = 0;
+    rail_item(rail, sizeof(rail), id, title);
+  }
+  s_cat(rail, "]}", sizeof(rail));
+  hal_msg_send(rail, s_len(rail));
+}
 
 /* Our own LXMF delivery dest — what a peer sees as `from`, and therefore half
  * of the thread id of everything we send (msg_id("<from>|<text>")). Deriving
@@ -1941,7 +2050,7 @@ static void convo_send_core(const char *buf, const char *id_in,
      * section 5 id is computed with sig: removed, so these bytes are the id. */
     char gmid[7];
     xprs_id(wire, s_len(wire), gmid);
-    xroom_seen(gmid);
+    xroom_seen(gmid);   /* our own copy off the air is not a second bubble */
     convo_msg(id, "out", g_call, text, "", "", "XPRS",
               gmid, parent, "verified", 0, 0);
     return;
@@ -1952,7 +2061,15 @@ static void convo_send_core(const char *buf, const char *id_in,
     /* The heart button rides the send path as "+like:<mid> <ck>". On the
      * XPRS rooms a vote is a t:reaction (section 6.5) named by the target's
      * section-5 id — never message text (that is what the webchat and the
-     * ESP32 page read; the "+like:" text form is chat-internal). */
+     * ESP32 page read; the "+like:" text form is chat-internal).
+     *
+     * This one stays on hal_xprs_send while the message below moves to
+     * hal_xprs_broadcast, and the line is where it is on purpose: a reaction
+     * is not words. It is add:/remove: naming a target, and a door taking
+     * those would either be a second verb for one packet type or a generic
+     * "compose me a packet", which is hal_xprs_send with extra steps.
+     * hal_xprs_broadcast is for what a person wrote; hal_xprs_send is for a
+     * typed act the core has no verb for. */
     {
       char lmid[70]; int unlike; const char *ck;
       if (votemark_parse(text, lmid, &unlike, &ck)) {
@@ -1990,26 +2107,26 @@ static void convo_send_core(const char *buf, const char *id_in,
         if (!text[0]) return;
       }
     }
-    char wire[300] = "t:message f:";
-    s_cat(wire, g_call, sizeof(wire));
-    s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
-    s_cat(wire, " scope:local", sizeof(wire));   /* the only scope room left */
-    if (parent[0]) { s_cat(wire, " r:", sizeof(wire)); s_cat(wire, parent, sizeof(wire)); }
-    s_cat(wire, " m:", sizeof(wire)); s_cat(wire, text, sizeof(wire));
-    if (s_len(wire) > 250) { notify("warning", "Message too long"); return; }
-    if (hal_xprs_send(wire, s_len(wire)) != 0) {
+    /* ONE CALL. What stood here composed the packet: it stamped its own ts:,
+     * concatenated scope:local and r:, checked the 250-byte ceiling and
+     * derived the section 5 identifier itself -- five transport decisions in
+     * a chat wapp, and the length check was wrong on top, because the core
+     * splits at spaces per 6.6 and a long Local post now travels instead of
+     * being refused.
+     *
+     * The core answers with the identifier it derived, so the bubble, a reply's
+     * r: and a reaction all name the same value. */
+    char mid[8] = "";
+    if (hal_xprs_broadcast(text, s_len(text), "local", 5,
+                           parent, s_len(parent),
+                           mid, sizeof(mid)) != 2) {
       notify("warning", "Could not send");
       return;
     }
-    /* Our own bubble learns its section-5 id: the host signs AFTER us and the
-     * id is computed with sig: removed, so the bytes we just sent ARE the id
-     * input. Without this, a webchat like or reply naming our message would
-     * reach a bubble with no id and light nothing. */
-    char mid[7];
-    xprs_id(wire, s_len(wire), mid);
-    xroom_seen(mid);   /* the history poll replays it; not a new bubble */
+    xroom_seen(mid);   /* our own copy off the air is not a second bubble */
     convo_msg(id, "out", g_call, text, "", "", "XPRS",
               mid, parent, "verified", 0, 0);
+    convo_touch(id, text, 0);
     return;
   }
   /* ── One call, because everything below it used to be transport ──────────
@@ -3446,6 +3563,25 @@ static void on_core_packet(const char *topic, const char *row) {
     return;
   }
 
+  if (s_eq(topic, "xprs.reaction")) {
+    /* A vote on a Local-room bubble (6.5), named by its section 5 identifier.
+     * This wapp has subscribed to the topic since the rooms were written and
+     * dropped every frame on the line below, so a heart from another station
+     * -- or from the ESP32's own chat page -- lit nothing, while our own like
+     * rendered locally and looked like it had worked. */
+    char scope[16] = "", r[16] = "", add[16] = "", rem[16] = "";
+    jstr(row, "scope", scope, sizeof(scope));
+    if (to[0] || !s_eq(scope, "local")) return;
+    jfield(row, "r", r, sizeof(r));
+    jfield(row, "add", add, sizeof(add));
+    jfield(row, "remove", rem, sizeof(rem));
+    if (!r[0] || !(s_eq(add, "like") || s_eq(rem, "like"))) return;
+    if (is_blocked(from) || is_muted(from)) return;
+    /* mine=0: is_self_call(from) returned above, so this is never our own. */
+    convo_react(XROOM_LOCAL, r, from, rem[0] ? 1 : 0, 0);
+    return;
+  }
+
   if (!s_eq(topic, "xprs.message")) return;
   char m[900] = "";
   if (!jfield(row, "m", m, sizeof(m)) || !m[0]) return;
@@ -3453,9 +3589,58 @@ static void on_core_packet(const char *topic, const char *row) {
    * 6.3's naming rule -- is correspondence or group business, and neither
    * renders from a packet as heard. What is left is the aired kinds. */
   if (xprs_is_station(to)) return;
-  /* Undirected traffic has no room to land in now that the Live tab is gone;
-   * a bulletin is addressed to its group. */
-  if (!to[0]) return;
+  if (!to[0]) {
+    /* UNDIRECTED TRAFFIC IS THE LOCAL ROOM'S, OR NOBODY'S (13.11.1).
+     *
+     * This was the line every scope:local packet died on. The room could send
+     * -- and did, in the same wire the ESP32 chat page speaks -- and never
+     * listened, so it was write-only and looked deleted. The backfill that
+     * used to cover for that was a hal_xprs_history poll, removed with the
+     * polling sweep; nothing replaced it, and nothing needs to: the packet is
+     * already here, on the bus, and this is where it belongs.
+     *
+     * Unscoped undirected traffic is still dropped. #GLOBAL was removed for a
+     * reason that has not changed (see the scope-room comment above): with no
+     * `d:` there is no custody, no ack and no retry, so a message reaches one
+     * phone and not another with nothing able to repair it. `local` is the
+     * room where that is honest, because everyone in it is in earshot. */
+    char scope[16] = "";
+    jstr(row, "scope", scope, sizeof(scope));
+    /* SAY WHY IT STAYED QUIET.
+     *
+     * An undirected packet that reaches this wapp and produces no bubble has
+     * four different reasons, and from outside they are one symptom: an empty
+     * room. Finding out which one cost a bench session, so the wapp now says.
+     * Only on a DROP -- a message that renders is its own evidence, and a line
+     * per packet on a busy channel is noise. */
+    #define LOCAL_DROP(why) do { \
+        char lg[128] = "[chat] local dropped: " why " from="; \
+        s_cat(lg, from, sizeof(lg)); \
+        s_cat(lg, " scope=", sizeof(lg)); \
+        s_cat(lg, scope[0] ? scope : "-", sizeof(lg)); \
+        s_cat(lg, " id=", sizeof(lg)); s_cat(lg, id[0] ? id : "-", sizeof(lg)); \
+        hal_log(1, lg, s_len(lg)); return; } while (0)
+    if (!s_eq(scope, "local")) LOCAL_DROP("not scope:local");
+    if (is_blocked(from) || is_muted(from)) LOCAL_DROP("blocked or muted");
+    /* Our own copy off the air is not a new bubble. Two guards, and they catch
+     * different things: is_self_call (above) keys on the callsign, this keys on
+     * the section 5 identifier -- which is also what makes a packet heard on
+     * Bluetooth AND on the LAN one message rather than two. */
+    if (xroom_seen(id)) return;   /* a second copy is not a second message */
+    char parent[8] = ""; jfield(row, "r", parent, sizeof(parent));
+    char sigv[12] = ""; jstr(row, "sig", sigv, sizeof(sigv));
+    unsigned h = sig_hash(XROOM_LOCAL, from, m);
+    char key[16]; u_itoa(h, key);
+    if (is_hidden_key(key)) LOCAL_DROP("hidden by the user");
+    #undef LOCAL_DROP
+    convo_msg(XROOM_LOCAL, "in", from, m, key, "", via,
+              id, parent, s_eq(sigv, "verified") ? "verified" : "", 0, 0);
+    convo_touch(XROOM_LOCAL, m, 0);
+    char preview[160]; s_cpy(preview, from, sizeof(preview));
+    s_cat(preview, ": ", sizeof(preview)); s_cat(preview, m, sizeof(preview));
+    notify_msg(XROOM_LOCAL, from, m, preview, id);
+    return;
+  }
   deliver_bulletin(to, from, m, s_eq(via, "RET") ? 0 : 1, via);
 }
 
@@ -3677,6 +3862,10 @@ void module_init(void) {
   /* Bridge restored follow/block state to the host so the profile UI is correct
    * from the first open. */
   for (int i = 0; i < g_blocked_n; i++) host_state_emit("block", g_blocked[i], 1);
+  /* Draw the rail once everything is restored. convo_remember redraws on each
+   * addition above, but the ghost sweep and the group refresh both prune after
+   * that, and the last word has to be the true one. */
+  render_rail();
 }
 
 /* Legacy APRS-IS housekeeping: auto-reconnect, login, drop detection, inbound

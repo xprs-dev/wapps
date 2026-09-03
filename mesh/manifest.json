@@ -1,6 +1,6 @@
 {
   "id": "tools.xprs.mesh",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "kind": "app",
   "title": "Mesh",
   "description": "Visualize and manage the mesh: XPRS stations on the air, and the Reticulum gateways that carry them.",
@@ -14,10 +14,8 @@
     "tools"
   ],
   "entry_ui": "screens/home.ui.json",
-  "tick_interval_ms": 2000,
-  "permissions": [
-    "network"
-  ],
+  "tick_interval_ms": 0,
+  "permissions": [],
   "provides": {
     "functions": [],
     "events": [],
@@ -30,7 +28,9 @@
       "msg",
       "rns"
     ],
-    "events": [],
+    "events": [
+      "core.rns.graph"
+    ],
     "libraries": [],
     "variables": []
   }

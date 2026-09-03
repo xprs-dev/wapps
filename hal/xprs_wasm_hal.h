@@ -1469,6 +1469,43 @@ int32_t hal_xprs_message(const char *to, uint32_t to_len,
                          uint32_t want_private,
                          char *id_out, uint32_t id_cap);
 
+/* SAY SOMETHING TO EVERYBODY IN REACH. The undirected half of xprs_message.
+ *
+ * You supply the words, how far they may travel, and what they answer. The
+ * core composes the t:message (no `d:`, which is what makes it a broadcast),
+ * signs it (9.1), splits it (6.6) and applies 13.11's reach rule when it picks
+ * the bearers.
+ *
+ * [scope] is 13.11: "local" for the bearers in range now (13.11.1 -- Bluetooth,
+ * the local network, ESP-NOW and LoRa where the operator says their LoRa is
+ * local, and NEVER the internet), "global" for everywhere, or ISO 3166-1
+ * alpha-2 codes. Pass NULL/0 for "local". It can only narrow where the words
+ * go; it never names a lane, and the core still chooses the bearers.
+ *
+ * [reply_to] is the section 5 identifier this post answers (6.4), NULL/0 for
+ * none.
+ *
+ * THERE IS NO want_private. Section 9.2 seals to ONE public key, and a
+ * broadcast has no recipient -- so this door does not offer a promise it could
+ * never keep, which is different from xprs_message, where asking is meaningful
+ * and the refusal is the answer.
+ *
+ *   returns  2 plain (the only form a broadcast has),
+ *            0 malformed: no profile, empty text, or a scope word that is
+ *              neither local, global nor a country code.
+ *
+ * Never 1 and never -1: both are answers about sealing.
+ *
+ * On success [id_out] receives the section 5 identifier -- 6 lowercase hex and
+ * a terminator, so pass at least 7. NO RECEIPT WILL EVER NAME IT: 13.7.1
+ * excludes a broadcast, because nobody was addressed and so nobody owes one.
+ * It is what a t:reaction's `r:` names, and what to key your own bubble on. */
+__attribute__((import_module("hal"), import_name("xprs_broadcast")))
+int32_t hal_xprs_broadcast(const char *text, uint32_t text_len,
+                           const char *scope, uint32_t scope_len,
+                           const char *reply_to, uint32_t reply_len,
+                           char *id_out, uint32_t id_cap);
+
 /* A person opened a message: the one receipt a wapp owns (XPRS.md 13.7).
  *
  * [id] is the message's section 5 identifier, as delivered on the event bus.
