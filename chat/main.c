@@ -458,6 +458,14 @@ static void fmt_time(char *b) { fmt_time_at(b, hal_time_epoch()); }
  * this is how it reaches the bubble. */
 static uint64_t g_msg_epoch = 0;
 
+/* When set, the NEXT convo_msg is marked "backfill":true.
+ *
+ * A replay out of the archive is not an arrival: the host stores it and stays
+ * quiet -- no unread badge, no rail bump, no activity restamp. Sixty replayed
+ * rows are sixty things already seen, and announcing them at every launch
+ * would be worse than the missing history the replay repairs. */
+static int g_msg_backfill = 0;
+
 /* kind: "pos" (position beacon) or "msg" (text message). The host uses
  * it to detect repeats — positions repeat per callsign (telemetry varies),
  * messages repeat by exact text. */
@@ -629,6 +637,8 @@ static int notif_dup(const char *from, const char *text) {
 static int is_group(const char *id);       /* '#' prefix; defined below */
 static int convo_renderable(const char *id);   /* defined with the convo store */
 static int cmd_field(const char *buf, const char *key, char *out, unsigned m);
+static void xroom_backfill(void);           /* defined with the archive read */
+static uint64_t g_xroom_fill_at;            /* epoch of the last refill */
 static int lxmf_callsign(const char *dest, char *out, unsigned cap);
 /* [mid] is the message's durable id where the caller has one. It becomes the
  * notification's dedupe tag, which the host honours ACROSS RESTARTS -- and a
@@ -703,8 +713,10 @@ static int g_convo_n = 0;
  * hal_xprs_broadcast(text, "local"): the core composes, signs, splits and
  * keeps it on the short-range bearers, never gated to the internet (13.11.1).
  * Receiving is the event bus, in on_core_packet -- undirected traffic with
- * scope:local. It used to be a poll of hal_xprs_history instead, which is why
- * the room went silent when the polling was removed and nothing replaced it.
+ * scope:local -- plus xroom_backfill, which refills the room from the core's
+ * archive when this wapp starts and when the room is opened. That read used to
+ * be a four-second poll; it is now an event, and without it anything that
+ * arrived while the wapp was not running was invisible forever.
  *
  * #GLOBAL is GONE. It was the unmarked room that went everywhere, and an
  * unmarked broadcast is exactly what nothing can repair: no d:, so no custody,
@@ -912,6 +924,7 @@ static void convo_msg(const char *id, const char *dir, const char *from,
   /* Only what this wapp can open: a group, a peer by callsign, or a NomadNet
    * peer with no callsign (see is_callsign_id). */
   uint64_t stamp = g_msg_epoch; g_msg_epoch = 0;  /* one message, one stamp */
+  int backfill = g_msg_backfill;                  /* one message, one flag */
   if (!convo_renderable(id)) return;
   char t[8];
   if (stamp) fmt_time_at(t, stamp); else fmt_time(t);
@@ -942,6 +955,8 @@ static void convo_msg(const char *id, const char *dir, const char *from,
    * do_convo_send around the local echo). */
   if (g_send_rid[0]) { s_cat(m, ",\"rid\":\"", sizeof(m)); s_cat(m, g_send_rid, sizeof(m)); s_cat(m, "\"", sizeof(m)); }
   if (g_send_status[0]) { s_cat(m, ",\"status\":\"", sizeof(m)); s_cat(m, g_send_status, sizeof(m)); s_cat(m, "\"", sizeof(m)); }
+  /* Replayed out of the archive, not just arrived: store it and stay quiet. */
+  if (backfill) s_cat(m, ",\"backfill\":true", sizeof(m));
   s_cat(m, "}", sizeof(m));
   hal_msg_send(m, s_len(m));
 }
@@ -952,12 +967,6 @@ static void convo_remove_key(const char *id, const char *key) {
   char m[160] = "{\"type\":\"ui.convo.remove\",\"id\":\"";
   jesc(m, sizeof(m), id);
   s_cat(m, "\",\"key\":\"", sizeof(m)); s_cat(m, key, sizeof(m));
-  s_cat(m, "\"}", sizeof(m));
-  hal_msg_send(m, s_len(m));
-}
-static void convo_remove_from(const char *from) {
-  char m[160] = "{\"type\":\"ui.convo.remove\",\"from\":\"";
-  jesc(m, sizeof(m), from);
   s_cat(m, "\"}", sizeof(m));
   hal_msg_send(m, s_len(m));
 }
@@ -1079,6 +1088,13 @@ static void do_convo_open(const char *buf) {
   /* 48, not 16: an LXMF conversation id is "lxmf:" + 32 hex. */
   char convo[48] = ""; cmd_field(buf, "convo", convo, sizeof(convo));
   rpend_flush_read(convo);
+  /* Opening the room is the one moment somebody is asking to SEE it, so it is
+   * the right moment to make sure it is complete. The guard is a memory of the
+   * last refill, not a schedule -- nothing here asks to be woken. */
+  if (xroom_is(convo)) {
+    uint64_t now = hal_time_epoch();
+    if (now - g_xroom_fill_at >= 60) { g_xroom_fill_at = now; xroom_backfill(); }
+  }
 }
 
 /* ── Local hide / block (never transmitted) ───────────────────────────────
@@ -1112,6 +1128,26 @@ static int is_hidden_key(const char *key) {
   for (int i = 0; i < g_hidden_n; i++) if (s_eq(g_hidden[i], key)) return 1;
   return 0;
 }
+/* State the blocked set, whole, the way render_rail states the rail.
+ *
+ * Blocking used to ask the host to REMOVE that sender's messages, and the host
+ * obliged by clearing every conversation and writing back only what it held in
+ * memory -- which, for a room nobody had opened this session, was nothing. So
+ * blocking one person emptied every room on the device. Nothing is deleted
+ * now: the rows stay, the host draws around them, and unblocking gives them
+ * back. This wapp owns the list durably in its own KV and re-states it whole
+ * at every start and every change. */
+static void blocked_publish(void) {
+  char m[700] = "{\"type\":\"ui.convo.blocked\",\"from\":[";
+  for (int i = 0; i < g_blocked_n; i++) {
+    if (i) s_cat(m, ",", sizeof(m));
+    s_cat(m, "\"", sizeof(m)); jesc(m, sizeof(m), g_blocked[i]);
+    s_cat(m, "\"", sizeof(m));
+  }
+  s_cat(m, "]}", sizeof(m));
+  hal_msg_send(m, s_len(m));
+}
+
 static void blocked_save(void) {
   char buf[BLOCK_MAX * 17]; buf[0] = 0;
   for (int i = 0; i < g_blocked_n; i++) { s_cat(buf, g_blocked[i], sizeof(buf)); s_cat(buf, ";", sizeof(buf)); }
@@ -1150,7 +1186,7 @@ static void block_add(const char *call) {
   if (g_blocked_n >= BLOCK_MAX) { notify("warning", "Block list is full"); return; }
   s_cpy(g_blocked[g_blocked_n++], up_call, 16);
   blocked_save();
-  convo_remove_from(up_call);   /* drop their already-shown bubbles + DM convo */
+  blocked_publish();            /* hide their bubbles; the rows stay on disk */
   host_state_emit("block", up_call, 1);
 }
 /* Mute: hide a callsign's NEW messages (Activity + groups + DMs) without
@@ -1162,6 +1198,7 @@ static void block_remove(const char *call) {
   for (int i = 0; i < g_blocked_n; i++) if (s_eq(g_blocked[i], up_call)) {
     for (int k = i; k < g_blocked_n - 1; k++) s_cpy(g_blocked[k], g_blocked[k + 1], 16);
     g_blocked_n--; blocked_save();
+    blocked_publish();          /* unblocking gives their bubbles back */
     host_state_emit("block", up_call, 0);
     return;
   }
@@ -3708,8 +3745,8 @@ static void on_core_packet(const char *topic, const char *row) {
      * -- and did, in the same wire the ESP32 chat page speaks -- and never
      * listened, so it was write-only and looked deleted. The backfill that
      * used to cover for that was a hal_xprs_history poll, removed with the
-     * polling sweep; nothing replaced it, and nothing needs to: the packet is
-     * already here, on the bus, and this is where it belongs.
+     * polling sweep and replaced by xroom_backfill -- the same read, on an
+     * event. This is the LIVE half: the packet is already here, on the bus.
      *
      * Unscoped undirected traffic is still dropped. #GLOBAL was removed for a
      * reason that has not changed (see the scope-room comment above): with no
@@ -3987,6 +4024,12 @@ void module_init(void) {
   /* Bridge restored follow/block state to the host so the profile UI is correct
    * from the first open. */
   for (int i = 0; i < g_blocked_n; i++) host_state_emit("block", g_blocked[i], 1);
+  blocked_publish();   /* the host draws around this set; it holds no copy */
+  /* Refill the Local room from the core's archive before the first frame.
+   * This is the moment its copy is most likely to be stale -- we were not
+   * running while those packets arrived. Once, on an event, never on a clock. */
+  g_xroom_fill_at = hal_time_epoch();
+  xroom_backfill();
   /* Draw the rail once everything is restored. convo_remember redraws on each
    * addition above, but the ghost sweep and the group refresh both prune after
    * that, and the last word has to be the true one. */
@@ -3997,14 +4040,181 @@ void module_init(void) {
  * drain and the timed APRS auto-beacon. Extracted from module_tick so its
  * early returns only skip APRS work — with the APRS-IS switch off (the
  * default), the Reticulum pull / relay polling in module_tick still runs. */
-/* Backfill the group and #LOCAL rooms from the host's archive.
+/* ── Refilling #LOCAL from the core's archive ─────────────────────────────
  *
- * Called when a page opens, and when the core says the archive grew — never on
- * a clock. This ran every four seconds: a 48-row query, in a pocket, for a room
- * nobody was looking at, whose answer on a quiet radio is the same 48 rows.
+ * The packets were never lost. XprsArchive keeps every heard packet for a year
+ * (xprs_archive.dart), and a scope:local message is stored there like any other
+ * undirected packet. What was lost is the ROOM'S copy, which lives only in the
+ * host's conversation database -- so anything that arrived while this wapp was
+ * not running never reached a bubble, and no amount of waiting brought it back.
+ * Measured on the bench: nineteen scope:local messages in the archive, several
+ * of which the room had never drawn.
  *
- * Live traffic does not come through here at all; it arrives on the event bus
- * as it happens. This is only what was said before the page was opened. */
+ * The old backfill was a poll, every four seconds, re-asking a question whose
+ * answer on a quiet radio never changes. This is the same read on an EVENT:
+ * once at init, and again when a person opens the room, which is the one moment
+ * they are asking to see it. module_tick stays empty and the tick interval
+ * stays zero.
+ *
+ * Live traffic does not come through here at all -- it arrives on the bus, in
+ * on_core_packet. This is only what was said before we were listening. */
+
+/* One reply from hal_xprs_history. 60 rows of ~450 bytes with room for JSON
+ * escaping; the removed poll measured ~410 bytes a row on a live archive. */
+static char g_hist[32768];
+#define HIST_ROWS 60
+static int g_hist_at[HIST_ROWS];      /* byte offset of each row, in reply order */
+
+/* Split a JSON array of objects into row offsets, QUOTE-AWARE.
+ *
+ * fnd_next_obj (used elsewhere in this file) counts braces without knowing
+ * about strings, and every row here carries a message body a person wrote: one
+ * `}` typed into the Local room would end the walk early and silently truncate
+ * the refill. Returns how many rows were found. */
+static int hist_split(const char *buf, int *at, int max) {
+  int n = 0, depth = 0, instr = 0;
+  for (const char *p = buf; *p; p++) {
+    if (instr) {
+      if (*p == '\\' && p[1]) { p++; continue; }
+      if (*p == '"') instr = 0;
+      continue;
+    }
+    if (*p == '"') { instr = 1; continue; }
+    if (*p == '{') {
+      if (depth == 0) { if (n >= max) return n; at[n++] = (int)(p - buf); }
+      depth++;
+    } else if (*p == '}') {
+      if (depth > 0) depth--;
+    }
+  }
+  return n;
+}
+
+/* The value of `key:` in an XPRS wire, up to the next space. Fields are
+ * space-separated (XPRS section 4), so this is the whole grammar. */
+static int wire_key(const char *wire, const char *key, char *out, unsigned cap) {
+  out[0] = 0;
+  unsigned kl = s_len(key);
+  for (const char *p = wire; *p; p++) {
+    /* a field starts at the beginning or after a space */
+    if (p != wire && p[-1] != ' ') continue;
+    unsigned i = 0;
+    while (i < kl && p[i] == key[i]) i++;
+    if (i != kl || p[kl] != ':') continue;
+    p += kl + 1;
+    unsigned o = 0;
+    while (*p && *p != ' ' && o < cap - 1) out[o++] = *p++;
+    out[o] = 0;
+    return 1;
+  }
+  return 0;
+}
+
+/* Everything after " m:" -- greedy to the end of the packet.
+ *
+ * `m:` is guaranteed last (XprsPacket puts every new field BEFORE it, which is
+ * why a signature can be added to a composed packet), so this must NOT stop at
+ * the next " n:" the way an older reader did: a message containing those two
+ * characters would have been cut in half. */
+static int wire_body(const char *wire, char *out, unsigned cap) {
+  out[0] = 0;
+  for (const char *p = wire; *p; p++) {
+    if (p != wire && p[-1] != ' ') continue;
+    if (p[0] == 'm' && p[1] == ':') {
+      s_cpy(out, p + 2, cap);
+      return out[0] != 0;
+    }
+  }
+  return 0;
+}
+
+static void xroom_backfill(void) {
+  static const char q[] =
+      "{\"limit\":60,\"types\":[\"message\"],\"to\":[\"\"]}";
+  int32_t n = hal_xprs_history(q, s_len(q), g_hist, sizeof(g_hist) - 1);
+  if (n < 0) {
+    /* The host answers -required when the buffer is too small. Say the number
+     * rather than going quiet -- an empty room with no explanation is the bug
+     * this whole function exists to end. */
+    char lg[112] = "[chat] local backfill: reply needs ";
+    char nb[16]; u_itoa((unsigned)(-n), nb);
+    s_cat(lg, nb, sizeof(lg));
+    s_cat(lg, " bytes, buffer is 32767 -- skipped", sizeof(lg));
+    hal_log(1, lg, s_len(lg));
+    return;
+  }
+  if (n <= 0 || n >= (int)sizeof(g_hist)) return;
+  g_hist[n] = 0;
+
+  int rows = hist_split(g_hist, g_hist_at, HIST_ROWS);
+  int kept = 0;
+  /* The archive answers NEWEST FIRST (ORDER BY pts DESC), and the store appends
+   * with an autoincrement sequence that is read back ascending -- so a forward
+   * walk would write the thread upside down, permanently. Walk backwards. */
+  for (int k = rows - 1; k >= 0; k--) {
+    char slice[1400];
+    const char *src = g_hist + g_hist_at[k];
+    { unsigned i = 0, depth = 0, instr = 0;
+      for (const char *p = src; *p && i < sizeof(slice) - 1; p++) {
+        if (instr) {
+          if (*p == '\\' && p[1]) { slice[i++] = *p++; slice[i++] = *p; continue; }
+          if (*p == '"') instr = 0;
+        } else if (*p == '"') instr = 1;
+        else if (*p == '{') depth++;
+        else if (*p == '}') { slice[i++] = *p; if (--depth == 0) break; else continue; }
+        slice[i++] = *p;
+      }
+      slice[i] = 0; }
+
+    char wire[300] = "", from[24] = "", id[24] = "", bearer[12] = "", sig[16] = "";
+    jstr(slice, "wire", wire, sizeof(wire));
+    jstr(slice, "from", from, sizeof(from));
+    jstr(slice, "id", id, sizeof(id));
+    jstr(slice, "bearer", bearer, sizeof(bearer));
+    jstr(slice, "sig", sig, sizeof(sig));
+    if (!wire[0] || !from[0] || !id[0]) continue;
+
+    /* The same tests the live path applies, in the same order, so the two
+     * agree about what belongs in this room (see on_core_packet). */
+    char tmp[24];
+    if (wire_key(wire, "n", tmp, sizeof(tmp))) continue;   /* a part (6.6) */
+    if (wire_key(wire, "x", tmp, sizeof(tmp))) continue;   /* sealed (9.2) */
+    if (wire_key(wire, "d", tmp, sizeof(tmp))) continue;   /* addressed */
+    if (!wire_key(wire, "scope", tmp, sizeof(tmp)) || !s_eq(tmp, "local")) continue;
+    if (is_blocked(from) || is_muted(from)) continue;
+    /* Our own posts are ours: they render on the other side of the room.
+     * gseen is NOT consulted -- it is 64 deep and persistent, and every
+     * delivered packet is stamped into it, so honouring it here would suppress
+     * exactly the newest rows a refill needs and leave a wiped room wiped. */
+    int mine = jbool_def(slice, "own", 0) || is_self_call(from);
+    if (xroom_seen(id)) continue;   /* twice in one reply is once on screen */
+
+    char body[400];
+    if (!wire_body(wire, body, sizeof(body))) continue;
+    char parent[8] = ""; wire_key(wire, "r", parent, sizeof(parent));
+
+    /* The SENDER's time, not now: a like names its target by content and
+     * minute, so stamping arrival makes a heart land on nothing. */
+    g_msg_epoch = (uint64_t)jint(slice, "ts");
+    unsigned h = sig_hash(XROOM_LOCAL, mine ? g_call : from, body);
+    char key[16]; u_itoa(h, key);
+    if (is_hidden_key(key)) { g_msg_epoch = 0; continue; }
+
+    g_msg_backfill = 1;
+    convo_msg(XROOM_LOCAL, mine ? "out" : "in", mine ? g_call : from, body,
+              mine ? "" : key, "", bearer[0] ? bearer : "XPRS",
+              id, parent, s_eq(sig, "verified") ? "verified" : "", 0, 0);
+    g_msg_backfill = 0;
+    kept++;
+  }
+
+  { char lg[96] = "[chat] local backfill: read=";
+    char nb[16]; u_itoa((unsigned)rows, nb); s_cat(lg, nb, sizeof(lg));
+    s_cat(lg, " kept=", sizeof(lg)); u_itoa((unsigned)kept, nb);
+    s_cat(lg, nb, sizeof(lg));
+    hal_log(1, lg, s_len(lg)); }
+}
+
 /* Re-read what the core says we belong to (26), and publish the rooms for the
  * groups we may actually speak in.
  *
