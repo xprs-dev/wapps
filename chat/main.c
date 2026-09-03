@@ -2144,6 +2144,8 @@ static void convo_send_core(const char *buf, const char *id_in,
       return;
     }
     xroom_seen(mid);   /* our own copy off the air is not a second bubble */
+    { char lg[64] = "[chat] local sent id="; s_cat(lg, mid, sizeof(lg));
+      hal_log(1, lg, s_len(lg)); }
     convo_msg(id, "out", g_call, text, "", "", "XPRS",
               mid, parent, "verified", 0, 0);
     convo_touch(id, text, 0);
@@ -3670,10 +3672,21 @@ static void on_core_packet(const char *topic, const char *row) {
      * rendered locally and looked like it had worked. */
     char scope[16] = "", r[16] = "", add[16] = "", rem[16] = "";
     jstr(row, "scope", scope, sizeof(scope));
-    if (to[0] || !s_eq(scope, "local")) return;
     jfield(row, "r", r, sizeof(r));
     jfield(row, "add", add, sizeof(add));
     jfield(row, "remove", rem, sizeof(rem));
+    /* Say what was done with it, every time: a heart that lit nothing and a
+     * heart that never arrived look the same, and the host tallies by the
+     * target id, so the id is the one thing worth writing down. */
+    { char lg[160] = "[chat] reaction from=";
+      s_cat(lg, from, sizeof(lg));
+      s_cat(lg, " scope=", sizeof(lg)); s_cat(lg, scope[0] ? scope : "-", sizeof(lg));
+      s_cat(lg, " to=", sizeof(lg)); s_cat(lg, to[0] ? to : "-", sizeof(lg));
+      s_cat(lg, " r=", sizeof(lg)); s_cat(lg, r[0] ? r : "-", sizeof(lg));
+      s_cat(lg, add[0] ? " add=" : " remove=", sizeof(lg));
+      s_cat(lg, add[0] ? add : rem, sizeof(lg));
+      hal_log(1, lg, s_len(lg)); }
+    if (to[0] || !s_eq(scope, "local")) return;
     if (!r[0] || !(s_eq(add, "like") || s_eq(rem, "like"))) return;
     if (is_blocked(from) || is_muted(from)) return;
     /* mine=0: is_self_call(from) returned above, so this is never our own. */
