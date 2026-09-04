@@ -24,10 +24,6 @@ void msg_id(const char *from, const char *text, char out[5]);
  * parent — unresolvable, but still not text the user typed. */
 int thread_parse(const char *wire, char parent[5], const char **disp);
 
-/* Compose the wire form of a reply: "+<parent> <text>", or plain [text] when
- * [parent] is empty. Returns [out]. */
-char *thread_wire(char *out, unsigned osz, const char *parent, const char *text);
-
 /* Like vote on the wire: "<4hex>:like" / "<4hex>:unlike" — a vote on the
  * message with that thread id. Deliberately human-readable (no special leading
  * byte) so any APRS client can like a topic by typing it. On match copies the
@@ -38,10 +34,6 @@ int like_parse(const char *wire, char tgt[5], int *unlike);
  * The heart arrives through the ordinary send path as text, so every send path
  * that can carry one has to recognise it before it becomes a message. */
 int roomlike_parse(const char *text, char mid[70], int *unlike);
-
-/* Either form of like vote. Send paths use this to decide "vote, not message";
- * receive paths use it so a vote never renders as a bubble. */
-int anylike_parse(const char *text, char mid[70], int *unlike);
 
 /* A vote that also names WHAT it voted on: "+like:<id> <ck>" /
  * "+unlike:<id> <ck>", where <ck> is a short key derived from the target's

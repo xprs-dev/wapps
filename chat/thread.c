@@ -87,18 +87,6 @@ int thread_parse(const char *wire, char parent[5], const char **disp) {
   return 1;
 }
 
-char *thread_wire(char *out, unsigned osz, const char *parent, const char *text) {
-  unsigned i = 0;
-  if (parent && parent[0]) {
-    if (i + 1 < osz) out[i++] = '+';
-    for (const char *p = parent; *p && i + 1 < osz; p++) out[i++] = *p;
-    if (i + 1 < osz) out[i++] = ' ';
-  }
-  for (const char *p = text; *p && i + 1 < osz; p++) out[i++] = *p;
-  out[i] = 0;
-  return out;
-}
-
 int like_parse(const char *wire, char tgt[5], int *unlike) {
   tgt[0] = 0; *unlike = 0;
   for (int i = 0; i < 4; i++) if (!t_hex(wire[i])) return 0;
@@ -127,15 +115,6 @@ int roomlike_parse(const char *text, char mid[70], int *unlike) {
   for (unsigned i = 0; i < n; i++) mid[i] = text[i];
   mid[n] = 0;
   return 1;
-}
-
-int anylike_parse(const char *text, char mid[70], int *unlike) {
-  char tgt[5];
-  if (like_parse(text, tgt, unlike)) {
-    for (int i = 0; i < 5; i++) mid[i] = tgt[i];
-    return 1;
-  }
-  return roomlike_parse(text, mid, unlike);
 }
 
 int votemark_parse(const char *wire, char mid[70], int *unlike,

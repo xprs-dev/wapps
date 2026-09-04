@@ -17,31 +17,14 @@
     "menu": true,
     "popup": true,
     "icon": "person_add",
-    "tip": "Message a person: a NomadNet peer, a callsign or an npub.",
+    "tip": "Message a station by callsign.",
     "children": [
       {
         "$": "action",
         "name": "rooms_newchat",
         "label": "New chat",
         "icon": "person_add",
-        "tip": "Find someone and start a direct conversation."
-      }
-    ]
-  },
-  {
-    "$": "screen",
-    "name": "Create a room",
-    "menu": true,
-    "popup": true,
-    "icon": "add",
-    "tip": "Create a room under the one you have open.",
-    "children": [
-      {
-        "$": "action",
-        "name": "rooms_new",
-        "label": "New room",
-        "icon": "add",
-        "tip": "Create a sub-room. A moderator approves it when you are not one."
+        "tip": "Find a station and start a direct conversation."
       }
     ]
   },
@@ -51,14 +34,14 @@
     "menu": true,
     "popup": true,
     "icon": "search",
-    "tip": "Search rooms, channels, conversations and people.",
+    "tip": "Open a group or find a station.",
     "children": [
       {
         "$": "action",
         "name": "rooms_search",
         "label": "Search",
         "icon": "search",
-        "tip": "Find a room, a channel, a conversation or a person."
+        "tip": "Type #GROUP to open a group, or a callsign to message a station."
       }
     ]
   },
@@ -68,14 +51,14 @@
     "hidden": true,
     "toolbar": true,
     "search": true,
-    "tip": "Find a room, a channel, a conversation or a person.",
+    "tip": "Type #GROUP to open a group, or a callsign to message a station.",
     "children": [
       {
         "$": "field",
         "name": "searchall",
         "$type": "people",
-        "empty": "Nothing found.\nTry a name, callsign, npub or LXMF address.",
-        "tip": "Tap a result to open it. A room or channel you have not joined is joined on the way in; a person starts a conversation."
+        "empty": "Nothing found.\nType #GROUP to open a group, or a callsign.",
+        "tip": "Tap a result to open it."
       }
     ]
   },
@@ -85,14 +68,14 @@
     "hidden": true,
     "toolbar": true,
     "search": true,
-    "tip": "Find a person and start a direct conversation.",
+    "tip": "Find a station and start a direct conversation.",
     "children": [
       {
         "$": "field",
         "name": "finduser",
         "$type": "people",
-        "empty": "Nobody heard yet.\nNomadNet and XPRS people appear here as their announces arrive — or paste an LXMF address to message someone straight away.",
-        "tip": "Everyone you can message, in one list. Each row says where they are from. NomadNet peers chat here over LXMF; XPRS people open in Messages."
+        "empty": "Nobody heard yet.\nStations appear here as their beacons arrive - or type a callsign to message one straight away.",
+        "tip": "Every XPRS station this device has heard of."
       }
     ]
   },
@@ -100,7 +83,7 @@
     "$": "screen",
     "name": "Nearby devices",
     "icon": "radar",
-    "tip": "Open the Mesh wapp — the live map of every node and station within reach.",
+    "tip": "Open the Mesh wapp - the live map of every node and station within reach.",
     "open_wapp": "mesh",
     "children": [],
     "menu": true
@@ -110,56 +93,12 @@
     "name": "Settings",
     "menu": true,
     "icon": "settings",
-    "tip": "Station identity, position, Bluetooth and media.",
+    "tip": "Which rooms this device listens to.",
     "children": [
       {
         "$": "group",
-        "name": "position",
-        "tip": "Your position and how far around it to listen.",
-        "children": [
-          {
-            "$": "field",
-            "name": "my_lat",
-            "$type": "string",
-            "label": "Latitude",
-            "default": "40.2056"
-          },
-          {
-            "$": "field",
-            "name": "my_lon",
-            "$type": "string",
-            "label": "Longitude",
-            "default": "-8.4196"
-          },
-          {
-            "$": "field",
-            "name": "radius_km",
-            "$type": "string",
-            "label": "Filter radius (km)",
-            "default": "100"
-          }
-        ]
-      },
-      {
-        "$": "group",
-        "name": "bluetooth",
-        "tip": "Exchange short messages directly over Bluetooth, off-grid.",
-        "children": [
-          {
-            "$": "field",
-            "name": "ble_enabled",
-            "$type": "bool",
-            "label": "Exchange over Bluetooth",
-            "default": true,
-            "apply": "ble_apply",
-            "tip": "Scan for and broadcast chat frames over BLE."
-          }
-        ]
-      },
-      {
-        "$": "group",
         "name": "channels",
-        "tip": "Which broadcast channels this device listens to. Rooms are always on; these are the open firehoses.",
+        "tip": "The Local room is everyone within radio range. Groups and conversations are always on.",
         "children": [
           {
             "$": "field",
@@ -168,40 +107,7 @@
             "label": "Local chat (nearby devices)",
             "default": true,
             "apply": "chan_apply",
-            "tip": "Group chatter from devices around you, over Bluetooth and local Reticulum. Off = those channels leave the rail and stop counting as unread."
-          },
-          {
-            "$": "field",
-            "name": "chan_global",
-            "$type": "bool",
-            "label": "Worldwide groups (internet Reticulum)",
-            "default": true,
-            "apply": "chan_apply",
-            "tip": "Worldwide group channels (#NAME*) relayed by internet Reticulum nodes. Off = they leave the rail and stop counting as unread."
-          },
-          {
-            "$": "field",
-            "name": "chan_nomad",
-            "$type": "bool",
-            "label": "NomadNet bridge (#NOMADNET)",
-            "default": true,
-            "apply": "chan_apply",
-            "tip": "Messages from non-XPRS NomadNet/LXMF nodes. Off = they are dropped on arrival."
-          }
-        ]
-      },
-      {
-        "$": "group",
-        "name": "media",
-        "tip": "Images shared in messages are fetched over the network.",
-        "children": [
-          {
-            "$": "field",
-            "name": "media_auto_mb",
-            "$type": "string",
-            "label": "Auto-download images up to (MB)",
-            "default": "10",
-            "tip": "Images at or below this size download automatically."
+            "tip": "Chatter from devices around you, over Bluetooth and the local network. Off = the room leaves the rail and stops counting as unread."
           }
         ]
       }

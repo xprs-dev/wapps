@@ -1,23 +1,21 @@
 {
   "id": "tools.xprs.chat",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "kind": "app",
   "title": "Chat",
-  "description": "Chat - encrypted messaging, live map and beacons over Reticulum, Bluetooth mesh and NOSTR relays (legacy APRS-IS optional).",
-  "summary": "A messaging station with Reticulum as the primary transport: encrypted 1:1 and group messages ride the RNS network (with NOSTR-relay store-and-forward backup) and short-range Bluetooth broadcast, no licence needed. A messenger panel shows text messages addressed to you, a live map pinpoints stations and messages, and a beacon composer crafts position / status / emergency / timed beacons. Legacy APRS-IS access is opt-in only and requires a government-issued amateur-radio callsign with its verified passcode.",
+  "description": "Chat - the Local room, open and closed groups, and 1:1 conversations over XPRS.",
+  "summary": "A chat for XPRS stations. The Local room is everyone in radio range; open groups are named channels; closed groups are members-only; a 1:1 is a conversation with a station by callsign, sealed when both keys are known. The core carries every message over whatever bearer it has - Bluetooth, the local network, Reticulum, LoRa - and this wapp only says what it wants said. Each conversation is its own database on this device.",
   "icon": "media/icons/chat.svg",
   "color": "#B71C1C",
   "tags": [
     "chat",
     "messaging",
-    "map",
-    "reticulum",
-    "mesh",
-    "nostr",
-    "aprs"
+    "xprs",
+    "mesh"
   ],
   "entry_ui": "screens/home.ui.json",
   "tick_interval_ms": 0,
+  "conversations": "wapp",
   "permissions": [
     "archive.read"
   ],
@@ -44,13 +42,11 @@
     "hal": [
       "log",
       "msg",
-      "rns",
       "kv",
       "time",
-      "socket",
-      "nostr",
+      "event",
       "sqlite",
-      "crypto"
+      "xprs"
     ],
     "events": [],
     "libraries": [],

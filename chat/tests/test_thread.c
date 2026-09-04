@@ -13,6 +13,26 @@
 #include "wapp_test.h"
 #include "../thread.c"
 
+/* Test-local combinators. The wapp itself routes each form to its own parser
+ * (a Local/closed-group vote is a t:reaction, an open-group vote is text);
+ * these only exist so the cases below can say "either form" in one call. */
+static int anylike_parse(const char *text, char mid[70], int *unlike) {
+  char tgt[5];
+  if (like_parse(text, tgt, unlike)) { for (int i = 0; i < 5; i++) mid[i] = tgt[i]; return 1; }
+  return roomlike_parse(text, mid, unlike);
+}
+static char *thread_wire(char *out, unsigned osz, const char *parent, const char *text) {
+  unsigned i = 0;
+  if (parent && parent[0]) {
+    if (i + 1 < osz) out[i++] = '+';
+    for (const char *p = parent; *p && i + 1 < osz; p++) out[i++] = *p;
+    if (i + 1 < osz) out[i++] = ' ';
+  }
+  for (const char *p = text; *p && i + 1 < osz; p++) out[i++] = *p;
+  out[i] = 0;
+  return out;
+}
+
 /* ── Message ids: derived, never assigned ────────────────────────── */
 
 WAPP_TEST(mid_is_four_lowercase_hex) {
@@ -99,21 +119,6 @@ WAPP_TEST(legacy_long_marker_is_stripped_not_shown) {
       parent, &disp));
   WAPP_EXPECT_STR_EQ(parent, "");
   WAPP_EXPECT_STR_EQ(disp, "OK");
-}
-
-WAPP_TEST(marker_round_trips_through_the_wire) {
-  char wire[64]; char parent[5]; const char *disp;
-  thread_wire(wire, sizeof(wire), "9eb5", "see you tomorrow");
-  WAPP_EXPECT_STR_EQ(wire, "+9eb5 see you tomorrow");
-  WAPP_EXPECT_TRUE(thread_parse(wire, parent, &disp));
-  WAPP_EXPECT_STR_EQ(parent, "9eb5");
-  WAPP_EXPECT_STR_EQ(disp, "see you tomorrow");
-}
-
-WAPP_TEST(no_parent_means_no_marker_on_the_wire) {
-  char wire[64];
-  thread_wire(wire, sizeof(wire), "", "plain message");
-  WAPP_EXPECT_STR_EQ(wire, "plain message");
 }
 
 /* ── Like votes ──────────────────────────────────────────────────── */
