@@ -1378,13 +1378,17 @@ int32_t hal_archive_set_pref(const char *kv, uint32_t kv_len);
  * records the bearer where a packet arrives and only collects radio and local
  * ones, so there is nothing to filter out and nothing to forget to filter.
  *
- * Stations heard, as ready-to-render people-widget sections -- two of them:
- * in earshot now (heard within the last eleven minutes, the same table every
- * reachability decision in the core reads), then heard this hour but quiet
- * since. Both newest first; the second is omitted when empty. Every row
- * carries a `seen Xs/Xm ago` tag first and the bearer second.
+ * Stations heard, as ready-to-render people-widget sections -- up to three:
+ * in earshot now (heard within the last eleven minutes on a radio or the
+ * local network -- the same table every reachability decision in the core
+ * reads; a station heard through a relay counts, the radio is what it
+ * arrived on), then heard this hour but quiet since, then XPRS stations
+ * whose packets reached us over Reticulum this hour and were not heard on
+ * the air at all. Each newest first; an empty section is omitted. Every row
+ * carries a `seen Xs/Xm ago` tag first and the bearer (or RNS) second.
  *   [{"title":"Heard over the air (n)","items":[{id,title,subtitle,tags}]},
- *    {"title":"Heard this hour (m)","items":[{id,title,subtitle,tags}]}] */
+ *    {"title":"Heard this hour (m)","items":[...]},
+ *    {"title":"On Reticulum (k)","items":[...]}] */
 __attribute__((import_module("hal"), import_name("xprs_stations")))
 int32_t hal_xprs_stations(char *out, uint32_t out_cap);
 

@@ -568,12 +568,14 @@ static void drain_core_events(void) {
 
 /* ── Finding somebody: the New chat and Search screens ──────────────────
  *
- * ONE question, ONE door: who has this device heard on the air? The core
- * keeps that table (XprsMonitor -- every reachability decision it makes
- * reads the same one) and hands it over as hal_xprs_stations: stations in
- * earshot now, then stations heard this hour but quiet since, newest first,
- * each row tagged `seen Xm ago` and its bearer. This wapp draws the two
- * sections as "Within reach" and "Heard this hour" and derives nothing.
+ * ONE question, ONE door: who has this device heard? The core keeps that
+ * table (XprsMonitor -- every reachability decision it makes reads the same
+ * one) and hands it over as hal_xprs_stations: stations in earshot now, then
+ * stations heard this hour but quiet since -- both on a radio or the local
+ * network, a relayed packet counting for the radio it arrived on -- then
+ * XPRS stations that reached us over Reticulum this hour. Newest first, each
+ * row tagged `seen Xm ago` and its bearer. This wapp draws the first two as
+ * "Nearby" and the third as "On Reticulum", and derives nothing.
  *
  * It used to ask hal_mesh_devices and hal_people_directory. The first is fed
  * by a beacon phones do not air, the second is a Reticulum view that lists a
@@ -584,7 +586,7 @@ static void drain_core_events(void) {
 static char g_find_q[64], g_sa_q[64];
 
 #define PEOPLE_MAX 128
-typedef struct { char call[16]; char seen[24]; char bearer[12]; int reach; } person_t;
+typedef struct { char call[16]; char seen[24]; char bearer[12]; int local; } person_t;
 static person_t g_people[PEOPLE_MAX];
 static int g_people_n;
 
@@ -633,10 +635,14 @@ static void people_collect(const char *q) {
   }
   if (n <= 0) return;
   st[n] = 0;
-  /* Section 0 = in earshot now, section 1 = heard this hour. Each section
-   * is an object holding an "items" array; walk the array to its ']'. */
+  /* Sections, by title: the two local ones ("Heard over the air", "Heard
+   * this hour") and "On Reticulum". Each holds an "items" array; walk it to
+   * its ']'. */
   const char *p = st; int section = 0;
-  while ((p = s_find(p, "\"items\":[")) != 0 && section < 2) {
+  while ((p = s_find(p, "\"title\":\"")) != 0 && section < 3) {
+    int local = !s_pre(p + 9, "On Reticulum");
+    p = s_find(p, "\"items\":[");
+    if (!p) break;
     p += 9;
     char row[600];
     while (*p) {
@@ -659,7 +665,7 @@ static void people_collect(const char *q) {
       s_cpy(e->call, call, sizeof(e->call));
       jarr_str(row, "tags", 0, e->seen, sizeof(e->seen));
       jarr_str(row, "tags", 1, e->bearer, sizeof(e->bearer));
-      e->reach = section == 0;
+      e->local = local;
     }
     section++;
   }
@@ -668,8 +674,7 @@ static void people_row(char *o, unsigned sz, const person_t *e) {
   s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, e->call);
   s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, e->call);
   s_cat(o, "\",\"subtitle\":\"", sz);
-  s_cat(o, e->reach ? "In reach" : "Heard this hour", sz);
-  if (e->seen[0]) { s_cat(o, " - ", sz); jesc(o, sz, e->seen); }
+  if (e->seen[0]) jesc(o, sz, e->seen); else s_cat(o, "heard", sz);
   if (e->bearer[0]) { s_cat(o, " - ", sz); jesc(o, sz, e->bearer); }
   s_cat(o, "\",\"icon\":\"person\"}", sz);
 }
@@ -689,19 +694,19 @@ static void render_people(const char *field, const char *q, int allow_group) {
     s_cat(o, "\",\"subtitle\":\"Open this group\",\"icon\":\"tag\"}]}", sz);
     first_section = 0;
   }
-  for (int pass = 1; pass >= 0; pass--) {   /* in reach first, then the rest */
+  for (int pass = 1; pass >= 0; pass--) {   /* nearby first, then Reticulum */
     int any = 0;
-    for (int i = 0; i < g_people_n; i++) if (g_people[i].reach == pass) { any = 1; break; }
+    for (int i = 0; i < g_people_n; i++) if (g_people[i].local == pass) { any = 1; break; }
     /* A callsign nobody has heard yet is still somebody: custody waits. */
     int typed = pass == 0 && want[0] != '#' && xprs_is_station(want) && !is_self_call(want);
     if (typed) { for (int i = 0; i < g_people_n; i++) if (s_eq(g_people[i].call, want)) typed = 0; }
     if (!any && !typed) continue;
     if (!first_section) s_cat(o, ",", sz);
     first_section = 0;
-    s_cat(o, pass ? "{\"title\":\"Within reach\",\"items\":[" : "{\"title\":\"Heard this hour\",\"items\":[", sz);
+    s_cat(o, pass ? "{\"title\":\"Nearby\",\"items\":[" : "{\"title\":\"On Reticulum\",\"items\":[", sz);
     int first = 1;
     for (int i = 0; i < g_people_n; i++) {
-      if (g_people[i].reach != pass) continue;
+      if (g_people[i].local != pass) continue;
       if (!first) s_cat(o, ",", sz);
       first = 0;
       people_row(o, sz, &g_people[i]);

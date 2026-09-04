@@ -275,15 +275,17 @@ TEST(actions_reach_their_handlers) {
   inbox_set("{\"type\":\"action\",\"action\":\"rooms_newchat\"}");
   module_handle_event();
   { const char *m = cap_find("ui.people.set");
-    const char *reach = m ? strstr(m, "Within reach") : 0;
-    const char *hour = m ? strstr(m, "Heard this hour") : 0;
+    const char *near_s = m ? strstr(m, "\"Nearby\"") : 0;
+    const char *rns_s = m ? strstr(m, "\"On Reticulum\"") : 0;
     const char *near = m ? strstr(m, "go:X1NEAR") : 0;
     const char *earlier = m ? strstr(m, "go:X1EARLIER") : 0;
-    CHECK(reach && near && reach < near);
-    CHECK(hour && earlier && hour < earlier && near < hour);
-    CHECK(m && strstr(m, "seen 20s ago") && strstr(m, "seen 40m ago"));
+    const char *far = m ? strstr(m, "go:X1FAR") : 0;
+    /* Local first -- in earshot, then heard this hour -- then Reticulum. */
+    CHECK(near_s && near && earlier && near_s < near && near < earlier);
+    CHECK(rns_s && far && earlier < rns_s && rns_s < far);
+    CHECK(m && strstr(m, "seen 20s ago - BLE") && strstr(m, "seen 40m ago - LAN") && strstr(m, "seen 3m ago - RNS"));
     CHECK(m && !strstr(m, "go:X1TEST"));
-    CHECK(m && !strstr(m, "X1PEER") && !strstr(m, "X1FAR")); }
+    CHECK(m && !strstr(m, "X1PEER")); }
   /* A search narrows both sections by callsign. */
   cap_clear();
   inbox_set("{\"command\":\"finduser_search\",\"finduser_query\":\"earl\"}");
