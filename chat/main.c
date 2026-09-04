@@ -567,62 +567,144 @@ static void drain_core_events(void) {
 }
 
 /* ── Finding somebody: the New chat and Search screens ──────────────────
- * One list of stations from the host's directory (callsigns only -- this
- * wapp speaks to XPRS stations and to nobody else), plus, in Search, a row
- * that opens the group you typed. A tap starts the room. */
+ *
+ * Two questions, both the core's to answer, both asked through a door it
+ * already has: who is within reach right now (hal_mesh_devices -- the
+ * neighbours the radio hears, by callsign), and who has this device ever
+ * heard of (hal_people_directory -- every station with a callsign, with the
+ * core's own "live" verdict). Merged by callsign into two sections: "Within
+ * reach" and "Heard earlier". A callsign is all Chat needs: which lane a
+ * message takes, and which key seals it, is decided in the core when the
+ * message is sent (XPRS.md 3, 9.2, 18.1). In Search a "#GROUP" typed in
+ * opens that group. A tap starts the room. */
 static char g_find_q[64], g_sa_q[64];
 
-static void render_people(const char *field, const char *q, int allow_group) {
-  static char o[16384]; const unsigned sz = sizeof(o);
-  s_cpy(o, "{\"type\":\"ui.people.set\",\"field\":\"", sz);
-  s_cat(o, field, sz);
-  s_cat(o, "\",\"sections\":[{\"title\":\"People\",\"items\":[", sz);
-  int first = 1;
+#define PEOPLE_MAX 64
+typedef struct { char call[16]; char nick[40]; int reach; uint64_t seen_ms; } person_t;
+static person_t g_people[PEOPLE_MAX];
+static int g_people_n;
+
+static int people_matches(const char *call, const char *nick, const char *want) {
+  if (!want[0]) return 1;
+  char hay[64] = ""; s_cat(hay, call, sizeof(hay)); s_cat(hay, " ", sizeof(hay)); s_cat(hay, nick, sizeof(hay));
+  for (int i = 0; hay[i]; i++) hay[i] = s_up(hay[i]);
+  for (const char *p = hay; *p; p++) if (s_pre(p, want)) return 1;
+  return 0;
+}
+static person_t *people_add(const char *call) {
+  for (int i = 0; i < g_people_n; i++) if (s_eq(g_people[i].call, call)) return &g_people[i];
+  if (g_people_n >= PEOPLE_MAX) return 0;
+  person_t *p = &g_people[g_people_n++];
+  s_cpy(p->call, call, sizeof(p->call)); p->nick[0] = 0; p->reach = 0; p->seen_ms = 0;
+  return p;
+}
+static void people_collect(const char *q) {
+  g_people_n = 0;
   char want[24] = ""; int j = 0;
   for (int i = 0; q[i] && j < 23; i++) if (q[i] != ' ') want[j++] = s_up(q[i]);
   want[j] = 0;
-  if (allow_group && want[0] == '#' && want[1]) {
-    s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, want);
-    s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, want);
-    s_cat(o, "\",\"subtitle\":\"Open this group\",\"icon\":\"tag\"}", sz);
-    first = 0;
+
+  /* Neighbours the radio hears now, by callsign. */
+  static char near[8192];
+  int n = hal_mesh_devices(near, sizeof(near) - 1);
+  if (n > 0 && n < (int)sizeof(near)) {
+    near[n] = 0;
+    /* The "Nearby" section's items; stop at the end of that array. */
+    const char *p = near;
+    for (;; p++) { if (!*p) break; if (s_pre(p, "\"title\":\"Nearby\"")) break; }
+    if (*p) { for (; *p; p++) if (s_pre(p, "\"items\":[")) { p += 9; break; } }
+    char row[700];
+    while (*p) {
+      while (*p == ' ' || *p == ',') p++;
+      if (*p == ']' || !*p) break;
+      const char *cur = p;
+      if (!next_object(&cur, row, sizeof(row))) break;
+      p = cur;
+      char call[24]; jstr(row, "id", call, sizeof(call));
+      if (!call[0] || !xprs_is_station(call) || is_self_call(call)) continue;
+      if (!people_matches(call, "", want)) continue;
+      person_t *e = people_add(call);
+      if (e) e->reach = 1;
+    }
   }
+  /* Everyone with a callsign this device has heard of, live first. */
   static char dir[12288];
-  int32_t n = hal_people_directory(q, s_len(q), dir, sizeof(dir) - 1);
-  if (n < 0) n = 0;
-  dir[n] = 0;
-  int matched = 0;
-  /* The directory lists a station once per lane it was heard on; a person
-   * is one row. */
-  static char seen[64][16]; int nseen = 0;
-  const char *cur = dir; static char slice[1200];
-  while (next_object(&cur, slice, sizeof(slice))) {
-    char call[24], nick[40];
-    jstr(slice, "callsign", call, sizeof(call));
-    if (!call[0] || !xprs_is_station(call) || is_self_call(call)) continue;
-    { int dup = 0;
-      for (int i = 0; i < nseen; i++) if (s_eq(seen[i], call)) { dup = 1; break; }
-      if (dup) continue;
-      if (nseen < 64) s_cpy(seen[nseen++], call, 16); }
-    jstr(slice, "nick", nick, sizeof(nick));
-    if (s_eq(call, want)) matched = 1;
-    if (!first) s_cat(o, ",", sz);
-    first = 0;
-    s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, call);
-    s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, call);
-    if (nick[0]) { s_cat(o, " - ", sz); jesc(o, sz, nick); }
-    s_cat(o, "\",\"subtitle\":\"XPRS", sz);
-    s_cat(o, jbool(slice, "live") ? " - online now" : "", sz);
-    s_cat(o, "\",\"icon\":\"person\"}", sz);
+  n = hal_people_directory(q, s_len(q), dir, sizeof(dir) - 1);
+  if (n > 0 && n < (int)sizeof(dir)) {
+    dir[n] = 0;
+    const char *cur = dir; static char slice[1200];
+    while (next_object(&cur, slice, sizeof(slice))) {
+      char call[24], nick[40];
+      jstr(slice, "callsign", call, sizeof(call));
+      if (!call[0] || !xprs_is_station(call) || is_self_call(call)) continue;
+      jstr(slice, "nick", nick, sizeof(nick));
+      person_t *e = people_add(call);
+      if (!e) continue;
+      if (nick[0] && !e->nick[0]) s_cpy(e->nick, nick, sizeof(e->nick));
+      if (jbool(slice, "live")) e->reach = 1;
+      uint64_t seen = (uint64_t)jint(slice, "lastSeen");
+      if (seen > e->seen_ms) e->seen_ms = seen;
+    }
   }
-  /* A callsign nobody has heard yet is still somebody: custody waits. */
-  if (!matched && want[0] != '#' && xprs_is_station(want) && !is_self_call(want)) {
-    if (!first) s_cat(o, ",", sz);
-    s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, want);
-    s_cat(o, "\",\"title\":\"Message ", sz); jesc(o, sz, want);
-    s_cat(o, "\",\"subtitle\":\"Not heard yet - delivery waits for them\",\"icon\":\"person_add\"}", sz);
+}
+static void people_row(char *o, unsigned sz, const person_t *e) {
+  s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, e->call);
+  s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, e->call);
+  if (e->nick[0]) { s_cat(o, " - ", sz); jesc(o, sz, e->nick); }
+  s_cat(o, "\",\"subtitle\":\"", sz);
+  if (e->reach) s_cat(o, "Within reach now", sz);
+  else if (e->seen_ms) {
+    uint64_t now = hal_time_epoch() * 1000ULL;
+    uint64_t d = now > e->seen_ms ? (now - e->seen_ms) / 1000ULL : 0;
+    char nb[16];
+    if (d < 3600) { u_lltoa(d / 60, nb); s_cat(o, "Heard ", sz); s_cat(o, nb, sz); s_cat(o, " min ago", sz); }
+    else if (d < 86400) { u_lltoa(d / 3600, nb); s_cat(o, "Heard ", sz); s_cat(o, nb, sz); s_cat(o, " h ago", sz); }
+    else { u_lltoa(d / 86400, nb); s_cat(o, "Heard ", sz); s_cat(o, nb, sz); s_cat(o, " days ago", sz); }
+  } else s_cat(o, "Heard earlier", sz);
+  s_cat(o, "\",\"icon\":\"person\"}", sz);
+}
+static void render_people(const char *field, const char *q, int allow_group) {
+  static char o[16384]; const unsigned sz = sizeof(o);
+  char want[24] = ""; int j = 0;
+  for (int i = 0; q[i] && j < 23; i++) if (q[i] != ' ') want[j++] = s_up(q[i]);
+  want[j] = 0;
+  people_collect(q);
+  s_cpy(o, "{\"type\":\"ui.people.set\",\"field\":\"", sz);
+  s_cat(o, field, sz);
+  s_cat(o, "\",\"sections\":[", sz);
+  int first_section = 1;
+  if (allow_group && want[0] == '#' && want[1]) {
+    s_cat(o, "{\"title\":\"Group\",\"items\":[{\"id\":\"go:", sz); jesc(o, sz, want);
+    s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, want);
+    s_cat(o, "\",\"subtitle\":\"Open this group\",\"icon\":\"tag\"}]}", sz);
+    first_section = 0;
   }
-  s_cat(o, "]}]}", sz);
+  for (int pass = 1; pass >= 0; pass--) {   /* reach first, then the rest */
+    int any = 0;
+    for (int i = 0; i < g_people_n; i++) if (g_people[i].reach == pass) { any = 1; break; }
+    /* A callsign nobody has heard yet is still somebody: custody waits. */
+    int typed = pass == 0 && want[0] != '#' && xprs_is_station(want) && !is_self_call(want);
+    if (typed) { for (int i = 0; i < g_people_n; i++) if (s_eq(g_people[i].call, want)) typed = 0; }
+    if (!any && !typed) continue;
+    if (!first_section) s_cat(o, ",", sz);
+    first_section = 0;
+    s_cat(o, pass ? "{\"title\":\"Within reach\",\"items\":[" : "{\"title\":\"Heard earlier\",\"items\":[", sz);
+    int first = 1;
+    for (int i = 0; i < g_people_n; i++) {
+      if (g_people[i].reach != pass) continue;
+      if (!first) s_cat(o, ",", sz);
+      first = 0;
+      people_row(o, sz, &g_people[i]);
+    }
+    if (typed) {
+      if (!first) s_cat(o, ",", sz);
+      s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, want);
+      s_cat(o, "\",\"title\":\"Message ", sz); jesc(o, sz, want);
+      s_cat(o, "\",\"subtitle\":\"Not heard yet - delivery waits for them\",\"icon\":\"person_add\"}", sz);
+    }
+    s_cat(o, "]}", sz);
+  }
+  s_cat(o, "]}", sz);
   hal_msg_send(o, s_len(o));
 }
 static void go_tap(const char *buf, const char *key) {

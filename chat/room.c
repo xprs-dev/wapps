@@ -433,9 +433,13 @@ static void emit_tail(const char *id, int h) {
 void room_open(const char *id) {
   if (g_idx < 0 || !room_renderable(id)) return;
   s_cpy(g_open, id, sizeof(g_open));
-  if (room_ensure(id, 0) < 0) return;
+  int created = room_ensure(id, 0);
+  if (created < 0) return;
   { pj_t p; pj_init(&p); pj_str(&p, id);
     db_exec(g_idx, "UPDATE rooms SET closed=0, unread=0 WHERE id=?", pj_done(&p)); }
+  /* Opened from outside -- a notification, the mesh graph -- before it had a
+   * row: it is a conversation now, so it is on the rail. */
+  if (created > 0) room_rail();
   /* Clear removes the row on the host; the upsert right after brings it
    * back, and the tail fills it. Emission order is delivery order. */
   { char m[120] = "{\"type\":\"ui.convo.clear\",\"id\":\"";

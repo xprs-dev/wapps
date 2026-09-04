@@ -106,6 +106,7 @@ int32_t hal_xprs_broadcast(const char* t,uint32_t l,const char* s,uint32_t sl,co
 int32_t hal_xprs_read(const char* id,uint32_t l){ (void)id;(void)l; return 0; }
 int32_t hal_xprs_history(const char* q,uint32_t ql,char* o,uint32_t cap){ (void)q;(void)ql; uint32_t n=strlen(g_history); if(n>cap) return -(int32_t)n; memcpy(o,g_history,n); return n; }
 int32_t hal_xprs_groups(char* o,uint32_t cap){ const char* s="[]"; uint32_t n=strlen(s); if(n>cap) return -2; memcpy(o,s,n); return n; }
+int32_t hal_mesh_devices(char* o,uint32_t cap){ const char* s="[{\"title\":\"Nearby\",\"items\":[{\"id\":\"X1NEAR\",\"title\":\"X1NEAR\",\"subtitle\":\"phone\"}]},{\"title\":\"Multi-hop\",\"items\":[{\"id\":\"X1FAR\",\"title\":\"X1FAR\"}]}]"; uint32_t n=strlen(s); if(n>cap) return -(int32_t)n; memcpy(o,s,n); return n; }
 int32_t hal_people_directory(const char* q,uint32_t ql,char* o,uint32_t cap){ (void)q;(void)ql; const char* s="[{\"kind\":\"xprs\",\"callsign\":\"X1PEER\",\"nick\":\"Peer\",\"live\":true},{\"kind\":\"lxmf\",\"callsign\":\"X1PEER\",\"dest\":\"abc\"}]"; uint32_t n=strlen(s); if(n>cap) return -2; memcpy(o,s,n); return n; }
 
 /* ---- sqlite-backed hal_sqlite_* ---- */

@@ -269,6 +269,17 @@ TEST(actions_reach_their_handlers) {
   module_handle_event();
   CHECK(cap_contains("\"id\":\"go:#NEWS\""));
   CHECK(cap_count("\"id\":\"go:X1PEER\"") == 1);   /* the directory lists them twice */
+  /* Within reach: the radio's neighbour and the directory's live station,
+   * ahead of everyone heard earlier. A multi-hop route is not "within reach". */
+  cap_clear();
+  inbox_set("{\"type\":\"action\",\"action\":\"rooms_newchat\"}");
+  module_handle_event();
+  { const char *m = cap_find("ui.people.set");
+    const char *reach = m ? strstr(m, "Within reach") : 0;
+    const char *near = m ? strstr(m, "go:X1NEAR") : 0;
+    const char *peer = m ? strstr(m, "go:X1PEER") : 0;
+    CHECK(reach && near && peer && reach < near && reach < peer);
+    CHECK(m && !strstr(m, "go:X1FAR")); }
   cap_clear();
   inbox_set("{\"command\":\"searchall_tap\",\"searchall_id\":\"go:#NEWS\"}");
   module_handle_event();

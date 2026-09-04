@@ -74,7 +74,7 @@
         "$": "field",
         "name": "finduser",
         "$type": "people",
-        "empty": "Nobody heard yet.\nStations appear here as their beacons arrive - or type a callsign to message one straight away.",
+        "empty": "Nobody within reach yet.\nStations appear here as the radio hears them - or type a callsign to message one straight away.",
         "tip": "Every XPRS station this device has heard of."
       }
     ]
