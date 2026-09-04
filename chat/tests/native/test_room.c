@@ -268,18 +268,28 @@ TEST(actions_reach_their_handlers) {
   inbox_set("{\"command\":\"searchall_search\",\"searchall_query\":\"#news\"}");
   module_handle_event();
   CHECK(cap_contains("\"id\":\"go:#NEWS\""));
-  CHECK(cap_count("\"id\":\"go:X1PEER\"") == 1);   /* the directory lists them twice */
-  /* Within reach: the radio's neighbour and the directory's live station,
-   * ahead of everyone heard earlier. A multi-hop route is not "within reach". */
+  /* The picker asks the core who it has heard on the air, and nothing
+   * else: in earshot first, heard this hour after, our own callsign never,
+   * and nothing from the mesh table or the Reticulum directory. */
   cap_clear();
   inbox_set("{\"type\":\"action\",\"action\":\"rooms_newchat\"}");
   module_handle_event();
   { const char *m = cap_find("ui.people.set");
     const char *reach = m ? strstr(m, "Within reach") : 0;
+    const char *hour = m ? strstr(m, "Heard this hour") : 0;
     const char *near = m ? strstr(m, "go:X1NEAR") : 0;
-    const char *peer = m ? strstr(m, "go:X1PEER") : 0;
-    CHECK(reach && near && peer && reach < near && reach < peer);
-    CHECK(m && !strstr(m, "go:X1FAR")); }
+    const char *earlier = m ? strstr(m, "go:X1EARLIER") : 0;
+    CHECK(reach && near && reach < near);
+    CHECK(hour && earlier && hour < earlier && near < hour);
+    CHECK(m && strstr(m, "seen 20s ago") && strstr(m, "seen 40m ago"));
+    CHECK(m && !strstr(m, "go:X1TEST"));
+    CHECK(m && !strstr(m, "X1PEER") && !strstr(m, "X1FAR")); }
+  /* A search narrows both sections by callsign. */
+  cap_clear();
+  inbox_set("{\"command\":\"finduser_search\",\"finduser_query\":\"earl\"}");
+  module_handle_event();
+  { const char *m = cap_find("ui.people.set");
+    CHECK(m && strstr(m, "go:X1EARLIER") && !strstr(m, "go:X1NEAR")); }
   cap_clear();
   inbox_set("{\"command\":\"searchall_tap\",\"searchall_id\":\"go:#NEWS\"}");
   module_handle_event();

@@ -1,6 +1,6 @@
 {
   "id": "tools.xprs.chat",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "kind": "app",
   "title": "Chat",
   "description": "Chat - the Local room, open and closed groups, and 1:1 conversations over XPRS.",
@@ -46,8 +46,7 @@
       "time",
       "event",
       "sqlite",
-      "xprs",
-      "mesh"
+      "xprs"
     ],
     "events": [],
     "libraries": [],
