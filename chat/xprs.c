@@ -202,7 +202,7 @@ static int x_known_type(const char *s) {
  * garbage-in-the-chat problem was that the sender does not always put `t:`
  * first: a sealed packet arrived as
  *   x:<blob> t:message f:X3ARK d:X1VCVM ts:... n:2/3 sig:...
- * which failed the prefix test in lxmf_drain and was rendered verbatim as a
+ * which failed the prefix test on the receive path and was rendered verbatim as a
  * chat bubble, with a notification, hundreds of times.
  *
  * So ask the honest question: is the text SHAPED like a packet, wherever its

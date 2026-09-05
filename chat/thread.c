@@ -19,7 +19,7 @@ static int t_hex(char ch) {
 /* ── SHA-1 (RFC 3174) — only for short, stable message ids ────────────────
  * A reply references its parent by a 4-hex-char id both sender and receiver
  * derive from the same content (from|text), so threads work across APRS-IS,
- * BLE and LXMF without any extra wire fields. Inputs are short (<~220B); a
+ * BLE and radio without any extra wire fields. Inputs are short (<~220B); a
  * fixed buffer is plenty. */
 static uint32_t sha1_rol(uint32_t v, int n) { return (v << n) | (v >> (32 - n)); }
 static void sha1(const unsigned char *msg, unsigned len, unsigned char out[20]) {
@@ -75,7 +75,7 @@ int thread_parse(const char *wire, char parent[5], const char **disp) {
   unsigned n = 0;
   while (t_hex(wire[1 + n])) n++;
   if (wire[1 + n] != ' ') return 0;
-  /* 64 hex = a marker from a build that named its parent by the LXMF envelope
+  /* 64 hex = a marker from an older build that named its parent by a transport
    * hash or a NOSTR event id. Only the receiver ever knew those, so the id is
    * unresolvable — but the marker is still wire syntax and must not be shown.
    * Strip it and thread nothing. Any other length is a coincidence, not a

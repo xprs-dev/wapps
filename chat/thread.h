@@ -3,7 +3,7 @@
 /*
  * Thread ids, reply markers and like votes — the wire conventions that let a
  * reply and a heart travel over transports with no room for extra fields
- * (APRS-IS, BLE, LXMF). Pure functions with no HAL dependency, kept out of
+ * (APRS-IS, BLE, radio). Pure functions with no HAL dependency, kept out of
  * main.c so tests/test_thread.c can cover them directly.
  *
  * A message's id is derived, not assigned: both sides compute the same 4 hex
@@ -12,14 +12,14 @@
  */
 
 /* First 4 hex chars of sha1("<from>|<text>") — a message's thread id.
- * [from] must be something both sides agree on: the sender's callsign on a
- * group, the sender's LXMF delivery dest on a direct conversation. */
+ * [from] must be something both sides agree on: the sender's callsign --
+ * on a group and on a 1:1 alike (a conversation is keyed by callsign). */
 void msg_id(const char *from, const char *text, char out[5]);
 
 /* Reply marker on the wire: "+<4hex> <text>". On match copies the parent id
  * into [parent] and points *disp at the text after the marker; otherwise
  * parent="" and *disp = wire. Returns 1 if a marker was found.
- * A 64-hex marker (an older build naming its parent by LXMF envelope hash or
+ * A 64-hex marker (an older build naming its parent by a transport hash or
  * NOSTR event id, which only one side ever knows) is stripped with an empty
  * parent — unresolvable, but still not text the user typed. */
 int thread_parse(const char *wire, char parent[5], const char **disp);

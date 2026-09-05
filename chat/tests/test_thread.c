@@ -4,7 +4,7 @@
  * These pin down the two conventions that a bug shipped broken: a reply's
  * "+<id> " marker is WIRE SYNTAX and must never reach a bubble as text, and a
  * heart is a VOTE that must never reach a bubble as a message. Both failures
- * were visible on a 1:1 LXMF conversation — a bubble reading
+ * were visible on a 1:1 conversation — a bubble reading
  * "+9eb53a4af55e5da04cdcc44842502041e8d5e2460f123358c31a17f8a31993dd OK",
  * and a heart that did nothing at all.
  *
@@ -110,7 +110,7 @@ WAPP_TEST(marker_needs_hex_and_a_space) {
 }
 
 /* The exact bubble from the bug report: an older build named its parent by the
- * 64-hex LXMF envelope hash. Unresolvable (only the receiver ever knew it) but
+ * 64-hex legacy marker. Unresolvable (only the receiver ever knew it) but
  * still syntax — strip it, thread nothing, and never show it. */
 WAPP_TEST(legacy_long_marker_is_stripped_not_shown) {
   char parent[5]; const char *disp;
@@ -154,7 +154,7 @@ WAPP_TEST(a_message_is_never_a_vote) {
 }
 
 /* Both send and receive paths route votes through anylike_parse, so it has to
- * cover the 4-hex group/LXMF form AND the 64-hex room form. */
+ * cover the 4-hex group form AND the 64-hex room form. */
 WAPP_TEST(anylike_covers_both_id_lengths) {
   char mid[70]; int unlike = 9;
   WAPP_EXPECT_TRUE(anylike_parse("b9fb:unlike", mid, &unlike));
@@ -231,12 +231,12 @@ WAPP_TEST(a_vote_is_small_whatever_it_votes_on) {
 /* ── The two paths, end to end ───────────────────────────────────── */
 
 /*
- * What do_rooms_send does for an LXMF conversation, and what lxmf_drain does
- * with the result. The vote never becomes a message; the reply arrives as text
+ * What do_rooms_send does for a 1:1 conversation, and what the receive path
+ * does with the result. The vote never becomes a message; the reply arrives as text
  * with a parent, on an id the sender can also compute.
  */
-WAPP_TEST(lxmf_round_trip_reply_then_like) {
-  const char *a_dest = "85cdc0319f2a4d1e7b0c5a6d8e9f0123";   /* who sent it */
+WAPP_TEST(direct_round_trip_reply_then_like) {
+  const char *a_dest = "X1ARKL";   /* who sent it, by callsign */
 
   /* A sends "smth". Both ends derive the same id for it. */
   char a_mid[5];

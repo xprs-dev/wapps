@@ -584,7 +584,7 @@ static void drain_core_events(void) {
  *
  * It used to ask hal_mesh_devices and hal_people_directory. The first is fed
  * by a beacon phones do not air, the second is a Reticulum view that lists a
- * station only after an LXMF announce -- so on a phone hearing two others
+ * station only after it is heard on the air -- so on a phone hearing two others
  * over Bluetooth the panel was empty. A callsign is all Chat needs
  * (XPRS.md 3); the lane and the key are the core's business at send time.
  * In Search, "#GROUP" typed in opens that group. A tap starts the room. */
