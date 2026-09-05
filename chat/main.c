@@ -512,11 +512,16 @@ static void on_core_event(const char *topic, const char *row) {
 
   static char content[900];
   char from[24] = "", title[40] = "", id[24] = "", call[24] = "", sigv[12] = "";
+  char bearer[12] = "";
   jstr(row, "from", from, sizeof(from));
   jstr(row, "title", title, sizeof(title));
   jstr(row, "id", id, sizeof(id));
   jstr(row, "call", call, sizeof(call));
   jstr(row, "sig", sigv, sizeof(sigv));
+  /* The lane the core says it arrived on -- ble, lan, lora, rns. NOT a
+   * literal: this branch used to hardcode "rns", so every 1:1 read
+   * "Reticulum" whatever carried it. Empty = no tag, never a guess. */
+  jstr(row, "bearer", bearer, sizeof(bearer));
   /* Two shapes reach us on xprs.message. `content` marks the finished one:
    * a 1:1 or a closed-group post the core reassembled and unsealed. */
   if (!jstr(row, "content", content, sizeof(content)) || !content[0]) {
@@ -547,7 +552,7 @@ static void on_core_event(const char *topic, const char *row) {
   static char body[900];
   s_cpy(body, content, sizeof(body));
   if (room[0] == '#') strip_reply6(body, parent);
-  int r = admit(room, mid, "in", call, body, parent, "rns",
+  int r = admit(room, mid, "in", call, body, parent, bearer,
                 s_eq(sigv, "verified") ? "verified" : "", jbool(row, "sealed"), ts, "", "", 0);
   /* The READ half of 13.7 fires when the user opens this thread. */
   if (r == 1 && room[0] != '#') rpend_add(room, id);

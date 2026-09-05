@@ -1,6 +1,6 @@
 {
   "id": "tools.xprs.chat",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "kind": "app",
   "title": "Chat",
   "description": "Chat - the Local room, open and closed groups, and 1:1 conversations over XPRS.",
