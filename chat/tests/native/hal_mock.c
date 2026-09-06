@@ -99,6 +99,7 @@ int32_t hal_kv_delete(const char* k,uint32_t kl){ int i=kv_find(k,kl); if(i<0) r
 /* ---- xprs doors ---- */
 static int g_bcast_n=0; static char g_last_wire[1024]; static char g_history[65536]="[]";
 const char* mock_last_wire(void){ return g_last_wire; }
+void mock_clear_wire(void){ g_last_wire[0]=0; }
 void mock_set_history(const char* json){ snprintf(g_history,sizeof(g_history),"%s",json); }
 /* The core's answer to a send: 0 aired, -2 "not a member of that group". */
 static int32_t g_send_rc = 0;

@@ -338,6 +338,28 @@ static void send_message(const char *id, const char *text_in) {
    * callsign. The core signs after us and the section 5 id is taken with
    * sig: removed, so these bytes are the id. */
   if (xgroup_is(id)) {
+    /* A heart on a group post is a REACTION (6.5): the same directed
+     * t:reaction a 1:1 sends, with the group as d: -- a closed group is an
+     * address (13.11.3). It used to ride inside m: as "+like:..", which made
+     * it a message: filed as a bubble here (hidden as noise, so the sender's
+     * own heart never appeared) and a message row on the far side. */
+    {
+      char lmid[70]; int unlike; const char *ck;
+      if (votemark_parse(text, lmid, &unlike, &ck)) {
+        char ts[24]; xprs_stamp(ts, sizeof(ts), hal_time_epoch());
+        char wire[300] = "t:reaction f:";
+        s_cat(wire, g_call, sizeof(wire));
+        s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
+        s_cat(wire, " d:", sizeof(wire)); s_cat(wire, id + 1, sizeof(wire));
+        s_cat(wire, unlike ? " remove:like" : " add:like", sizeof(wire));
+        s_cat(wire, " r:", sizeof(wire)); s_cat(wire, lmid, sizeof(wire));
+        int32_t rc = hal_xprs_send(wire, s_len(wire));
+        if (rc == -2) { notify("warning", "You can post here once you accept the invitation"); return; }
+        if (rc != 0) { notify("warning", "Could not send"); return; }
+        room_react(id, lmid, g_call, unlike, 1);   /* our own heart, now */
+        return;
+      }
+    }
     char parent[8]; strip_reply6(text, parent);
     if (!text[0]) return;
     char ts[24]; xprs_stamp(ts, sizeof(ts), hal_time_epoch());
@@ -439,10 +461,13 @@ static void on_core_packet(const char *topic, const char *row) {
   const char *auth = s_eq(sigv, "verified") ? "verified" : "";
 
   if (s_eq(topic, "xprs.reaction")) {
-    /* Two shapes of the SAME packet (6.5): a Local-room vote (scope:local, no
-     * d:) lands in #LOCAL; a 1:1 reaction addressed to us (d: our callsign)
-     * lands in the conversation with the reactor and is stored in that room's
-     * own reactions table. `r:` names the bubble's section 5 id either way. */
+    /* Three shapes of the SAME packet (6.5): a Local-room vote (scope:local,
+     * no d:) lands in #LOCAL; a 1:1 reaction addressed to us (d: our callsign)
+     * lands in the conversation with the reactor; a reaction addressed to a
+     * closed group we have a room for (d: X5...) lands in that group. Each is
+     * stored in that room's own reactions table; `r:` names the bubble's
+     * section 5 id either way. Who may react in a group is the core's door,
+     * like a post. */
     char scope[16] = "", r[16] = "", add[16] = "", rem[16] = "";
     jstr(row, "scope", scope, sizeof(scope));
     jfield(row, "r", r, sizeof(r));
@@ -455,6 +480,9 @@ static void on_core_packet(const char *topic, const char *row) {
       room_react(XROOM_LOCAL, r, from, rem[0] ? 1 : 0, 0);
     } else if (to[0] && is_self_call(to)) {
       room_react(from, r, from, rem[0] ? 1 : 0, 0);
+    } else if (to[0]) {
+      char gid[24] = "#"; s_cat(gid, to, sizeof(gid));
+      if (xgroup_is(gid) && room_known(gid)) room_react(gid, r, from, rem[0] ? 1 : 0, 0);
     }
     return;
   }

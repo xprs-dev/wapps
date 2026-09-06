@@ -21,6 +21,7 @@ const char* mock_reads(void); int mock_reads_count(void); void mock_reads_clear(
 void mock_set_groups(const char*);
 void mock_set_roster(const char*);
 void mock_set_send_rc(int32_t);
+void mock_clear_wire(void);
 const char* room_open_id(void);
 /* main.c */
 void module_init(void); void module_handle_event(void); void module_destroy(void);
@@ -31,6 +32,7 @@ static int g_fail = 0, g_pass = 0;
 
 static void fresh(void) {
   module_destroy();
+  mock_clear_wire();
   system("rm -rf /tmp/chat_native_test");
   cap_clear(); log_clear();
   module_init();
@@ -386,6 +388,53 @@ TEST(a_1to1_like_is_a_directed_reaction_65) {
   CHECK(cap_contains("ui.convo.react"));  /* local echo of our own like */
 }
 
+TEST(a_closed_group_like_is_a_directed_reaction_with_a_local_echo_65) {
+  fresh();
+  /* The heart on a closed-group bubble leaves as t:reaction d:<X5group>
+   * (6.5), never as a message, and our own heart shows at once. */
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"#X5ROOM\"}");
+  module_handle_event();
+  cap_clear();
+  inbox_set("{\"command\":\"rooms_send\",\"rooms_convo\":\"#X5ROOM\",\"rooms_input\":\"+like:abc123 9f\"}");
+  module_handle_event();
+  const char *w = mock_last_wire();
+  CHECK(w && strstr(w, "t:reaction") && strstr(w, "d:X5ROOM") && strstr(w, "add:like") && strstr(w, "r:abc123"));
+  CHECK(w && !strstr(w, "m:"));
+  CHECK(cap_contains("ui.convo.react"));      /* local echo */
+  CHECK(cap_count("ui.convo.msg") == 0);      /* not a bubble */
+
+  cap_clear();
+  inbox_set("{\"command\":\"rooms_send\",\"rooms_convo\":\"#X5ROOM\",\"rooms_input\":\"+unlike:abc123 9f\"}");
+  module_handle_event();
+  w = mock_last_wire();
+  CHECK(w && strstr(w, "remove:like") && strstr(w, "d:X5ROOM"));
+
+  /* And a member's reaction to a group post lands in that group's room. */
+  cap_clear();
+  event_push("xprs.reaction",
+    "{\"id\":\"rx03\",\"type\":\"reaction\",\"from\":\"X1PEER\",\"to\":\"X5ROOM\",\"fields\":[[\"t\",\"reaction\"],[\"f\",\"X1PEER\"],[\"d\",\"X5ROOM\"],[\"r\",\"def456\"],[\"add\",\"like\"]],\"forUs\":false,\"sealed\":false,\"bearer\":\"lan\",\"sig\":\"verified\"}");
+  module_handle_event();
+  CHECK(cap_contains("ui.convo.react") && cap_contains("#X5ROOM"));
+  /* A reaction for a group we have no room for is nobody's. */
+  cap_clear();
+  event_push("xprs.reaction",
+    "{\"id\":\"rx04\",\"type\":\"reaction\",\"from\":\"X1PEER\",\"to\":\"X5NONE\",\"fields\":[[\"t\",\"reaction\"],[\"f\",\"X1PEER\"],[\"d\",\"X5NONE\"],[\"r\",\"def456\"],[\"add\",\"like\"]],\"forUs\":false,\"sealed\":false,\"bearer\":\"lan\",\"sig\":\"verified\"}");
+  module_handle_event();
+  CHECK(!cap_contains("ui.convo.react"));
+}
+
+TEST(utf8_in_the_composer_reaches_the_wire_untouched) {
+  fresh();
+  /* The host writes the inbox as UTF-8 now; the wapp must pass a 4-byte
+   * emoji through jstr and onto the wire verbatim. */
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"#X5ROOM\"}");
+  module_handle_event();
+  inbox_set("{\"command\":\"rooms_send\",\"rooms_convo\":\"#X5ROOM\",\"rooms_input\":\"hi \xF0\x9F\x98\x80 there\"}");
+  module_handle_event();
+  const char *w = mock_last_wire();
+  CHECK(w && strstr(w, "m:hi \xF0\x9F\x98\x80 there"));
+}
+
 TEST(a_1to1_reaction_addressed_to_us_is_applied_and_local_still_routes) {
   fresh();
   /* A peer likes our bubble: directed reaction (d: our callsign) -> applied in
@@ -557,6 +606,8 @@ int main(void) {
   run_a_sent_one_to_one_carries_its_tick_and_the_tick_finds_it_after_restart();
   run_a_read_receipt_is_asked_for_on_open_and_survives_the_other_engine();
   run_a_1to1_like_is_a_directed_reaction_65();
+  run_a_closed_group_like_is_a_directed_reaction_with_a_local_echo_65();
+  run_utf8_in_the_composer_reaches_the_wire_untouched();
   run_a_1to1_reaction_addressed_to_us_is_applied_and_local_still_routes();
   run_finding_a_group_opens_the_group_room_and_the_core_decides_posting();
   run_the_member_panel_lists_the_roster_when_a_group_opens();
