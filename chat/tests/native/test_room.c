@@ -17,6 +17,7 @@ void inbox_set(const char*); void event_push(const char*, const char*);
 int log_count(const char*); void log_clear(void);
 void mock_set_time(uint64_t); void mock_kv_set(const char*, const char*); int mock_kv_exists(const char*);
 const char* mock_last_wire(void); void mock_set_history(const char*); void mock_query_cap(uint32_t);
+const char* mock_reads(void); int mock_reads_count(void); void mock_reads_clear(void);
 /* main.c */
 void module_init(void); void module_handle_event(void); void module_destroy(void);
 
@@ -237,6 +238,35 @@ TEST(a_sent_one_to_one_carries_its_tick_and_the_tick_finds_it_after_restart) {
   CHECK(cap_contains("\"status\":\"delivered\""));
 }
 
+TEST(a_read_receipt_is_asked_for_on_open_and_survives_the_other_engine) {
+  /* THE BUG this guards: a live 1:1 is stored by whichever engine hears it
+   * (often the headless one) while the room is opened by the page engine.
+   * The read receipt must ride the room's DATABASE across that gap, not an
+   * engine's RAM. So: hear it, wipe RAM (destroy+init = a fresh engine),
+   * open, and the receipt must still be asked for -- exactly once. */
+  fresh();
+  mock_reads_clear();
+  event_push("xprs.message",
+    "{\"id\":\"rd0001\",\"type\":\"message\",\"from\":\"9fe08ecd\",\"call\":\"X1PEER\",\"sig\":\"verified\",\"to\":\"\",\"content\":\"knock knock\",\"title\":\"X1PEER\",\"ts\":1700000100,\"forUs\":true,\"bearer\":\"rns\",\"sealed\":false}");
+  module_handle_event();
+  /* Heard, not opened: no receipt yet. */
+  CHECK(mock_reads_count() == 0);
+
+  /* A DIFFERENT engine opens the thread -- RAM gone, database kept. */
+  module_destroy(); module_init();
+  mock_reads_clear();
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"X1PEER\"}");
+  module_handle_event();
+  CHECK(mock_reads_count() == 1);
+  CHECK(strstr(mock_reads(), "[rd0001]") != 0);
+
+  /* Opening again asks for nothing: the pending set was drained. */
+  mock_reads_clear();
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"X1PEER\"}");
+  module_handle_event();
+  CHECK(mock_reads_count() == 0);
+}
+
 TEST(rooms_survive_a_restart_and_kv_is_cleaned_once) {
   fresh();
   mock_kv_set("groups", "#NEWS;"); mock_kv_set("gseen", "x;"); mock_kv_set("chan", "1");
@@ -337,6 +367,92 @@ TEST(a_room_file_name_is_safe_and_stable) {
   CHECK(access("/tmp/chat_native_test/rooms/_hLOCAL.sqlite3", 0) == 0);
 }
 
+TEST(a_1to1_like_is_a_directed_reaction_65) {
+  fresh();
+  /* The heart on a 1:1 bubble rides rooms_send as a votemark; it must leave as
+   * a DIRECTED t:reaction (XPRS.md 6.5), not a message and not a Local vote. */
+  inbox_set("{\"command\":\"rooms_send\",\"rooms_convo\":\"X1PEER\",\"rooms_input\":\"+like:abc123\"}");
+  module_handle_event();
+  const char *w = mock_last_wire();
+  CHECK(w && strstr(w, "t:reaction"));
+  CHECK(w && strstr(w, "d:X1PEER"));
+  CHECK(w && strstr(w, "add:like"));
+  CHECK(w && strstr(w, "r:abc123"));
+  CHECK(w && !strstr(w, "scope:local"));
+  CHECK(cap_contains("ui.convo.react"));  /* local echo of our own like */
+}
+
+TEST(a_1to1_reaction_addressed_to_us_is_applied_and_local_still_routes) {
+  fresh();
+  /* A peer likes our bubble: directed reaction (d: our callsign) -> applied in
+   * the conversation with that peer. */
+  event_push("xprs.reaction",
+    "{\"id\":\"rx01\",\"type\":\"reaction\",\"from\":\"X1PEER\",\"to\":\"X1TEST\",\"fields\":[[\"t\",\"reaction\"],[\"f\",\"X1PEER\"],[\"d\",\"X1TEST\"],[\"r\",\"abc123\"],[\"add\",\"like\"]],\"forUs\":true,\"sealed\":false,\"bearer\":\"rns\",\"sig\":\"verified\"}");
+  module_handle_event();
+  CHECK(cap_contains("ui.convo.react"));
+
+  /* A Local-room vote (scope:local, no d:) still routes to #LOCAL, unchanged. */
+  cap_clear();
+  event_push("xprs.reaction",
+    "{\"id\":\"rx02\",\"type\":\"reaction\",\"from\":\"X1PEER\",\"to\":\"\",\"fields\":[[\"t\",\"reaction\"],[\"f\",\"X1PEER\"],[\"r\",\"def456\"],[\"add\",\"like\"]],\"forUs\":false,\"scope\":\"local\",\"bearer\":\"ble\",\"sig\":\"verified\"}");
+  module_handle_event();
+  CHECK(cap_contains("ui.convo.react"));
+}
+
+TEST(a_message_read_live_in_the_open_room_flushes_its_receipt_now) {
+  fresh();
+  mock_reads_clear();
+  /* Open the conversation, THEN a reply arrives while it is on screen. It is
+   * read the instant it lands, so its s:read must fire now — not only on the
+   * next open. */
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"X1PEER\"}");
+  module_handle_event();
+  mock_reads_clear();
+  event_push("xprs.message",
+    "{\"id\":\"rl0001\",\"type\":\"message\",\"from\":\"9fe08ecd\",\"call\":\"X1PEER\",\"sig\":\"verified\",\"to\":\"\",\"content\":\"live one\",\"title\":\"X1PEER\",\"ts\":1700000200,\"forUs\":true,\"bearer\":\"rns\",\"sealed\":false}");
+  module_handle_event();
+  CHECK(mock_reads_count() == 1);
+  CHECK(strstr(mock_reads(), "[rl0001]") != 0);
+
+  /* A message for a DIFFERENT (not-open) room is not flushed on arrival. */
+  mock_reads_clear();
+  event_push("xprs.message",
+    "{\"id\":\"rl0002\",\"type\":\"message\",\"from\":\"1234abcd\",\"call\":\"X3OTHR\",\"sig\":\"verified\",\"to\":\"\",\"content\":\"elsewhere\",\"title\":\"X3OTHR\",\"ts\":1700000300,\"forUs\":true,\"bearer\":\"rns\",\"sealed\":false}");
+  module_handle_event();
+  CHECK(mock_reads_count() == 0);
+}
+
+TEST(opening_a_thread_acks_read_for_older_unacked_messages_too) {
+  fresh();
+  mock_reads_clear();
+  /* Three inbound messages arrive while the thread is CLOSED (older, unread). */
+  const char *ids[3] = { "old001", "old002", "old003" };
+  for (int i = 0; i < 3; i++) {
+    char row[512];
+    snprintf(row, sizeof(row),
+      "{\"id\":\"%s\",\"type\":\"message\",\"from\":\"9fe08ecd\",\"call\":\"X1PEER\",\"sig\":\"verified\",\"to\":\"\",\"content\":\"m%d\",\"title\":\"X1PEER\",\"ts\":170000000%d,\"forUs\":true,\"bearer\":\"rns\",\"sealed\":false}",
+      ids[i], i, i);
+    event_push("xprs.message", row);
+    module_handle_event();
+  }
+  CHECK(mock_reads_count() == 0);  /* closed: nothing acked yet */
+
+  /* Opening the thread acks read for ALL of them, not just the last. */
+  mock_reads_clear();
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"X1PEER\"}");
+  module_handle_event();
+  CHECK(mock_reads_count() == 3);
+  CHECK(strstr(mock_reads(), "[old001]") != 0);
+  CHECK(strstr(mock_reads(), "[old002]") != 0);
+  CHECK(strstr(mock_reads(), "[old003]") != 0);
+
+  /* Reopening acks nothing: read_sent marks them done, no re-ask. */
+  mock_reads_clear();
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"X1PEER\"}");
+  module_handle_event();
+  CHECK(mock_reads_count() == 0);
+}
+
 int main(void) {
   run_only_local_exists_by_default();
   run_a_local_message_is_stored_and_shown_once();
@@ -349,6 +465,11 @@ int main(void) {
   run_hide_forgets_a_message_for_good();
   run_a_one_to_one_arrives_by_callsign_and_creates_its_room();
   run_a_sent_one_to_one_carries_its_tick_and_the_tick_finds_it_after_restart();
+  run_a_read_receipt_is_asked_for_on_open_and_survives_the_other_engine();
+  run_a_1to1_like_is_a_directed_reaction_65();
+  run_a_1to1_reaction_addressed_to_us_is_applied_and_local_still_routes();
+  run_a_message_read_live_in_the_open_room_flushes_its_receipt_now();
+  run_opening_a_thread_acks_read_for_older_unacked_messages_too();
   run_rooms_survive_a_restart_and_kv_is_cleaned_once();
   run_actions_reach_their_handlers();
   run_a_reply_buffer_too_small_halves_the_tail();

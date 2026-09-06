@@ -157,41 +157,6 @@ static void xgroups_refresh(void) {
  * The core composes and signs the receipt; what it cannot observe is that a
  * person opened the thread. Ids wait here until they do. RAM on purpose: a
  * receipt lost to a restart is a tick that stays grey, not a message lost. */
-#define RPEND_MAX 64
-static char g_rpend_convo[RPEND_MAX][24];
-static char g_rpend_id[RPEND_MAX][8];
-static int  g_rpend_n;
-static void rpend_add(const char *convo, const char *id) {
-  if (!id || !id[0] || convo[0] == '#') return;
-  for (int i = 0; i < g_rpend_n; i++) if (s_eq(g_rpend_id[i], id)) return;
-  if (g_rpend_n >= RPEND_MAX) {
-    for (int i = 1; i < RPEND_MAX; i++) {
-      s_cpy(g_rpend_convo[i - 1], g_rpend_convo[i], sizeof(g_rpend_convo[0]));
-      s_cpy(g_rpend_id[i - 1], g_rpend_id[i], 8);
-    }
-    g_rpend_n = RPEND_MAX - 1;
-  }
-  s_cpy(g_rpend_convo[g_rpend_n], convo, sizeof(g_rpend_convo[0]));
-  s_cpy(g_rpend_id[g_rpend_n], id, 8);
-  g_rpend_n++;
-}
-static void rpend_flush_read(const char *convo) {
-  if (!convo[0] || convo[0] == '#') return;
-  int w = 0;
-  for (int i = 0; i < g_rpend_n; i++) {
-    if (s_eq(g_rpend_convo[i], convo)) {
-      hal_xprs_read(g_rpend_id[i], s_len(g_rpend_id[i]));
-    } else {
-      if (w != i) {
-        s_cpy(g_rpend_convo[w], g_rpend_convo[i], sizeof(g_rpend_convo[0]));
-        s_cpy(g_rpend_id[w], g_rpend_id[i], 8);
-      }
-      w++;
-    }
-  }
-  g_rpend_n = w;
-}
-
 /* ── Admitting, in this file's vocabulary ─────────────────────────────── */
 static int admit(const char *room, const char *mid, const char *dir,
                  const char *sender, const char *body, const char *parent,
@@ -405,6 +370,28 @@ static void send_message(const char *id, const char *text_in) {
     return;
   }
 
+  /* A 1:1 like/repost is a DIRECTED reaction (XPRS.md 6.5): the same packet as
+   * a Local-room vote, addressed with d: the peer instead of scope:local.
+   * `r:` names the bubble's section 5 id; the core signs (9.1) and delivers it.
+   * The heart rides the send path as a votemark ("+like:<id>"), so it is caught
+   * here before the text becomes a message. Stored in THIS conversation's own
+   * reactions table via room_react, exactly like every other room. */
+  {
+    char lmid[70]; int unlike; const char *ck;
+    if (votemark_parse(text, lmid, &unlike, &ck)) {
+      char ts[24]; xprs_stamp(ts, sizeof(ts), hal_time_epoch());
+      char wire[300] = "t:reaction f:";
+      s_cat(wire, g_call, sizeof(wire));
+      s_cat(wire, " ts:", sizeof(wire)); s_cat(wire, ts, sizeof(wire));
+      s_cat(wire, " d:", sizeof(wire)); s_cat(wire, id, sizeof(wire));
+      s_cat(wire, unlike ? " remove:like" : " add:like", sizeof(wire));
+      s_cat(wire, " r:", sizeof(wire)); s_cat(wire, lmid, sizeof(wire));
+      if (hal_xprs_send(wire, s_len(wire)) != 0) { notify("warning", "Could not send"); return; }
+      room_react(id, lmid, g_call, unlike, 1);
+      return;
+    }
+  }
+
   /* A 1:1. The return value says what ACTUALLY happened, and the bubble is
    * labelled with that: a message that could not be sealed is never drawn
    * as private (36.8). */
@@ -446,16 +433,23 @@ static void on_core_packet(const char *topic, const char *row) {
   const char *auth = s_eq(sigv, "verified") ? "verified" : "";
 
   if (s_eq(topic, "xprs.reaction")) {
-    /* A vote on a Local-room bubble (6.5), named by its section 5 id. */
+    /* Two shapes of the SAME packet (6.5): a Local-room vote (scope:local, no
+     * d:) lands in #LOCAL; a 1:1 reaction addressed to us (d: our callsign)
+     * lands in the conversation with the reactor and is stored in that room's
+     * own reactions table. `r:` names the bubble's section 5 id either way. */
     char scope[16] = "", r[16] = "", add[16] = "", rem[16] = "";
     jstr(row, "scope", scope, sizeof(scope));
     jfield(row, "r", r, sizeof(r));
     jfield(row, "add", add, sizeof(add));
     jfield(row, "remove", rem, sizeof(rem));
-    if (to[0] || !s_eq(scope, "local") || !r[0]) return;
+    if (!r[0]) return;
     if (!(s_eq(add, "like") || s_eq(rem, "like"))) return;
     if (is_blocked(from)) return;
-    room_react(XROOM_LOCAL, r, from, rem[0] ? 1 : 0, 0);
+    if (!to[0] && s_eq(scope, "local")) {
+      room_react(XROOM_LOCAL, r, from, rem[0] ? 1 : 0, 0);
+    } else if (to[0] && is_self_call(to)) {
+      room_react(from, r, from, rem[0] ? 1 : 0, 0);
+    }
     return;
   }
   if (!s_eq(topic, "xprs.message")) return;
@@ -552,10 +546,11 @@ static void on_core_event(const char *topic, const char *row) {
   static char body[900];
   s_cpy(body, content, sizeof(body));
   if (room[0] == '#') strip_reply6(body, parent);
-  int r = admit(room, mid, "in", call, body, parent, bearer,
-                s_eq(sigv, "verified") ? "verified" : "", jbool(row, "sealed"), ts, "", "", 0);
-  /* The READ half of 13.7 fires when the user opens this thread. */
-  if (r == 1 && room[0] != '#') rpend_add(room, id);
+  /* The read half of 13.7 is recorded by room_admit (a live inbound 1:1 is
+   * queued in the room's database) and aired when the user opens the thread
+   * (room_open -> room_flush_reads). Nothing to do here. */
+  admit(room, mid, "in", call, body, parent, bearer,
+        s_eq(sigv, "verified") ? "verified" : "", jbool(row, "sealed"), ts, "", "", 0);
 }
 
 static void drain_core_events(void) {
@@ -775,7 +770,6 @@ static void do_open(const char *buf) {
   char convo[48] = ""; cmd_field(buf, "convo", convo, sizeof(convo));
   if (!convo[0]) return;
   room_open(convo);
-  rpend_flush_read(convo);
   /* Opening the room is the one moment somebody is asking to SEE it. The
    * guard is a memory of the last refill, not a schedule. */
   if (xroom_is(convo)) {

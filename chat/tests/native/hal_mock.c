@@ -103,7 +103,11 @@ void mock_set_history(const char* json){ snprintf(g_history,sizeof(g_history),"%
 int32_t hal_xprs_send(const char* w,uint32_t l){ if(l>=sizeof(g_last_wire)) return -1; memcpy(g_last_wire,w,l); g_last_wire[l]=0; return 0; }
 int32_t hal_xprs_message(const char* to,uint32_t tl,const char* t,uint32_t l,uint32_t priv,char* id,uint32_t cap){ (void)to;(void)tl;(void)t;(void)l; snprintf(id,cap,"m%05d",++g_bcast_n); return priv?1:2; }
 int32_t hal_xprs_broadcast(const char* t,uint32_t l,const char* s,uint32_t sl,const char* r,uint32_t rl,char* id,uint32_t cap){ (void)t;(void)l;(void)s;(void)sl;(void)r;(void)rl; snprintf(id,cap,"b%05d",++g_bcast_n); return 2; }
-int32_t hal_xprs_read(const char* id,uint32_t l){ (void)id;(void)l; return 0; }
+static char g_reads[2048]; static int g_reads_n=0;
+const char* mock_reads(void){ return g_reads; }
+int mock_reads_count(void){ return g_reads_n; }
+void mock_reads_clear(void){ g_reads[0]=0; g_reads_n=0; }
+int32_t hal_xprs_read(const char* id,uint32_t l){ (void)l; size_t u=strlen(g_reads); snprintf(g_reads+u,sizeof(g_reads)-u,"[%s]",id); g_reads_n++; return 0; }
 int32_t hal_xprs_history(const char* q,uint32_t ql,char* o,uint32_t cap){ (void)q;(void)ql; uint32_t n=strlen(g_history); if(n>cap) return -(int32_t)n; memcpy(o,g_history,n); return n; }
 int32_t hal_xprs_groups(char* o,uint32_t cap){ const char* s="[]"; uint32_t n=strlen(s); if(n>cap) return -2; memcpy(o,s,n); return n; }
 int32_t hal_xprs_stations(char* o,uint32_t cap){ const char* s="[{\"title\":\"Heard over the air (2)\",\"items\":[{\"id\":\"X1NEAR\",\"title\":\"X1NEAR\",\"subtitle\":\"BLE - -40 dBm - 3 packets\",\"tags\":[\"seen 20s ago\",\"BLE\",\"peers 2\"]},{\"id\":\"X1TEST\",\"title\":\"X1TEST\",\"subtitle\":\"BLE\",\"tags\":[\"seen 5s ago\",\"BLE\"]}]},{\"title\":\"Heard this hour (1)\",\"items\":[{\"id\":\"X1EARLIER\",\"title\":\"X1EARLIER\",\"subtitle\":\"LAN\",\"tags\":[\"seen 40m ago\",\"LAN\"]}]},{\"title\":\"On Reticulum (1)\",\"items\":[{\"id\":\"X1FAR\",\"title\":\"X1FAR\",\"subtitle\":\"RNS\",\"tags\":[\"seen 3m ago\",\"RNS\"]}]}]"; uint32_t n=strlen(s); if(n>cap) return -(int32_t)n; memcpy(o,s,n); return n; }

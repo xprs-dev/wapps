@@ -277,4 +277,13 @@ void db_init_room(int h) {
   db_exec(h, "CREATE TABLE IF NOT EXISTS reactions("
              "mid TEXT, who TEXT, kind TEXT, PRIMARY KEY(mid, who))", 0);
   db_exec(h, "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)", 0);
+  /* Whether an inbound message has had its s:read sent (XPRS.md 13.7). A per-
+   * message flag on the row itself, in the DATABASE not RAM, because the
+   * message is stored by whichever engine hears it (often the headless one)
+   * while the room is opened by the page engine -- the two share this file and
+   * nothing else. Opening a room acks every inbound row still at 0, so OLDER
+   * messages get read receipts too, not only ones that arrived live. Column is
+   * added by ALTER for tables created before it existed; the duplicate-column
+   * error on a table that already has it is ignored (db_exec never throws). */
+  db_exec(h, "ALTER TABLE messages ADD COLUMN read_sent INTEGER NOT NULL DEFAULT 0", 0);
 }

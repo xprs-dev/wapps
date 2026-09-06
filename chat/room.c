@@ -25,6 +25,8 @@ static char g_q[65536];
 void log1(const char *line) { hal_log(1, line, s_len(line)); }
 
 /* ── ids ──────────────────────────────────────────────────────────── */
+static void room_flush_reads(int h);
+
 static int is_xgroup(const char *id) {
   return id[0] == '#' && id[1] == 'X' && id[2] == '5' && s_len(id) == 7;
 }
@@ -333,7 +335,29 @@ int room_admit(const room_msg_t *m) {
   /* "Have I seen this" is the primary key. A second copy off another bearer,
    * our own post echoed off the air, a refill re-reading last week: one row. */
   { pj_t p; pj_init(&p); pj_str(&p, m->mid);
-    if (db_int(h, "SELECT 1 AS n FROM messages WHERE mid=? LIMIT 1", pj_done(&p), 0) == 1) return 0; }
+    if (db_int(h, "SELECT 1 AS n FROM messages WHERE mid=? LIMIT 1", pj_done(&p), 0) == 1) {
+      /* Already stored -- typically by the OTHER engine. Two engines each drain
+       * their own copy of the inbound stream: the headless one commonly WINS the
+       * insert (and its ui.convo.* is read by nobody), while the page engine,
+       * which draws the open thread and holds g_open, gets here as a dup and USED
+       * TO return without drawing anything -- so a message that arrived while you
+       * were looking at the conversation did not appear until the view was next
+       * refreshed. If this dup is a live inbound for the room ON SCREEN, the page
+       * engine paints the bubble now and flushes the read receipt it is owed. */
+      if (s_eq(m->dir, "in") && !m->replay && m->room[0] != '#' &&
+          s_eq(m->room, g_open)) {
+        int priv = room_is_private(m->room);
+        emit_msg(m->room, m->mid, m->dir, m->sender ? m->sender : "",
+                 m->ts ? m->ts : hal_time_epoch(), m->body,
+                 m->parent ? m->parent : "", m->via ? m->via : "",
+                 m->auth ? m->auth : "", m->enc, m->rid ? m->rid : "",
+                 m->status ? m->status : "", m->sys, priv);
+        /* The row is already stored (read_sent=0), so flushing acks it now --
+         * the page engine is the one that knows it is being read on screen. */
+        room_flush_reads(h);
+      }
+      return 0;
+    } }
 
   char body[BODY_MAX + 1]; s_cpy(body, m->body, sizeof(body));
   unsigned long long ts = m->ts ? m->ts : hal_time_epoch();
@@ -382,6 +406,21 @@ int room_admit(const room_msg_t *m) {
     if (created > 0 || !s_eq(g_top, m->room)) room_rail();
     if (in && !m->sys) notify_msg(m->room, sender, body, m->mid);
     unread_publish();
+    /* A live 1:1 we just heard owes its sender an s:read once a person opens
+     * this room (XPRS.md 13.7). Recorded here, in the room's own database, so
+     * the receipt survives the engine that opens the room being a different
+     * one from the engine that stored this. The core applies 13.7.1's
+     * exclusions when we ask, so queuing one that turns out not to qualify
+     * costs nothing. Replays (archive refill) are not live arrivals and are
+     * skipped, so reopening an old thread does not re-ack it. */
+    /* Read RIGHT NOW if this is the conversation on screen: a reply that lands
+     * while you are looking at the thread is read the instant it arrives, so its
+     * s:read must fire now, not only when the thread is next opened. The row was
+     * stored with read_sent=0 (the column default), and room_flush_reads acks
+     * every inbound row still at 0 -- so nothing needs queuing here. */
+    if (in && !m->sys && m->room[0] != '#' && s_eq(m->room, g_open)) {
+      room_flush_reads(h);
+    }
   } else if (created > 0) {
     room_rail();
   }
@@ -430,6 +469,40 @@ static void emit_tail(const char *id, int h) {
   }
 }
 
+/* Every inbound 1:1 in [id] that still owes an s:read: hand each to the core
+ * (which composes, signs and airs it down the arrival lane), then forget them.
+ * Called from room_open only -- opening a thread is the one moment a person is
+ * looking at it. Runs in whatever engine the user is driving; the pending set
+ * was written by whatever engine heard the messages, because it lives in this
+ * room's database rather than either engine's memory. */
+static void room_flush_reads(int h) {
+  /* Ask the core to ack read for every inbound message in THIS conversation not
+   * yet acked -- older ones the first time it is opened, not only live arrivals.
+   * Newest first and capped, so opening a long thread does not air a flood; the
+   * rest are caught on the next open. The core resolves each id (its live pocket
+   * or its persistent spool) and applies 13.7.1, so a group post or a stranger's
+   * is a no-op there -- we still mark it done so it is not re-asked. */
+  int n = db_query(h,
+      "SELECT mid FROM messages WHERE dir='in' AND sys=0 AND read_sent=0 "
+      "ORDER BY seq DESC LIMIT 500", 0, g_q, sizeof(g_q));
+  if (n <= 0) return;
+  const char *cur = g_q;
+  static char row[64];
+  int any = 0;
+  while (next_object(&cur, row, sizeof(row))) {
+    char mid[40];
+    if (jstr(row, "mid", mid, sizeof(mid)) && mid[0]) {
+      hal_xprs_read(mid, s_len(mid));
+      any = 1;
+    }
+  }
+  if (any)
+    db_exec(h,
+        "UPDATE messages SET read_sent=1 WHERE mid IN "
+        "(SELECT mid FROM messages WHERE dir='in' AND sys=0 AND read_sent=0 "
+        "ORDER BY seq DESC LIMIT 500)", 0);
+}
+
 void room_open(const char *id) {
   if (g_idx < 0 || !room_renderable(id)) return;
   s_cpy(g_open, id, sizeof(g_open));
@@ -446,7 +519,11 @@ void room_open(const char *id) {
     jesc(m, sizeof(m), id); s_cat(m, "\"}", sizeof(m)); hal_msg_send(m, s_len(m)); }
   emit_upsert(id, 0, 0);
   int h = room_handle(id);
-  if (h >= 0) emit_tail(id, h);
+  if (h >= 0) {
+    emit_tail(id, h);
+    /* Groups never earn read receipts (13.7.1); only a 1:1 flushes. */
+    if (id[0] != '#') room_flush_reads(h);
+  }
   unread_publish();
 }
 
@@ -488,8 +565,12 @@ void room_status(const char *rid, const char *state) {
   if (room[0]) {
     int h = room_handle(room);
     if (h >= 0) {
+      /* Never walk a tick backwards: `read` is terminal (a read implies the
+       * ack), so a late `ack` arriving after it must not downgrade the bubble.
+       * This matters now that a receipt with no outbox row still reaches here. */
       pj_t p; pj_init(&p); pj_str(&p, state); pj_str(&p, rid);
-      db_exec(h, "UPDATE messages SET status=? WHERE rid=?", pj_done(&p));
+      db_exec(h, "UPDATE messages SET status=? WHERE rid=? AND status<>'read'",
+              pj_done(&p));
     }
   }
   char m[120] = "{\"type\":\"ui.convo.status\",\"rid\":\"";
@@ -571,6 +652,10 @@ int block_remove(const char *call) {
 /* ── lifecycle ────────────────────────────────────────────────────── */
 void room_init(const char *self) {
   s_cpy(g_self, self ? self : "", sizeof(g_self));
+  /* A fresh module has no conversation on screen. Reset it explicitly: g_open
+   * is a static that outlives a module_destroy/init, and a stale value makes an
+   * arriving message look "read on screen" when nothing is open. */
+  g_open[0] = 0;
   for (int i = 0; i < ROOM_H_MAX; i++) { g_rh[i].h = -1; g_rh[i].id[0] = 0; }
   g_idx = db_open("index.sqlite3");
   if (g_idx < 0) { log1("[chat] index.sqlite3 would not open"); return; }
