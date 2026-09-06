@@ -18,6 +18,10 @@ int log_count(const char*); void log_clear(void);
 void mock_set_time(uint64_t); void mock_kv_set(const char*, const char*); int mock_kv_exists(const char*);
 const char* mock_last_wire(void); void mock_set_history(const char*); void mock_query_cap(uint32_t);
 const char* mock_reads(void); int mock_reads_count(void); void mock_reads_clear(void);
+void mock_set_groups(const char*);
+void mock_set_roster(const char*);
+void mock_set_send_rc(int32_t);
+const char* room_open_id(void);
 /* main.c */
 void module_init(void); void module_handle_event(void); void module_destroy(void);
 
@@ -399,6 +403,92 @@ TEST(a_1to1_reaction_addressed_to_us_is_applied_and_local_still_routes) {
   CHECK(cap_contains("ui.convo.react"));
 }
 
+TEST(finding_a_group_opens_the_group_room_and_the_core_decides_posting) {
+  fresh();
+  /* Bug: tapping a group in Find opened a 1:1 with its X5 address, so a
+   * non-member could send as correspondence. It must open the #GROUP room. */
+  inbox_set("{\"command\":\"searchall_tap\",\"searchall_id\":\"go:X5ROOM\"}");
+  module_handle_event();
+  CHECK(room_known("#X5ROOM"));    /* opened the GROUP */
+  CHECK(!room_known("X5ROOM"));    /* NOT a 1:1 with the group address */
+
+  /* Whether we may post is the CORE's answer (26.7): -2 means "not a member".
+   * This wapp airs nothing, keeps no bubble, and says why. */
+  mock_set_send_rc(-2);
+  cap_clear();
+  inbox_set("{\"command\":\"rooms_send\",\"rooms_convo\":\"#X5ROOM\",\"rooms_input\":\"let me in\"}");
+  module_handle_event();
+  CHECK(mock_last_wire() == 0 || !strstr(mock_last_wire(), "d:X5ROOM"));
+  CHECK(cap_contains("once you accept the invitation"));
+  CHECK(cap_count("ui.convo.msg") == 0);
+
+  /* And when the core says yes, the post goes out and the bubble is drawn. */
+  mock_set_send_rc(0);
+  cap_clear();
+  inbox_set("{\"command\":\"rooms_send\",\"rooms_convo\":\"#X5ROOM\",\"rooms_input\":\"hello all\"}");
+  module_handle_event();
+  CHECK(mock_last_wire() && strstr(mock_last_wire(), "d:X5ROOM"));
+  CHECK(cap_count("ui.convo.msg") == 1);
+}
+
+TEST(the_member_panel_lists_the_roster_when_a_group_opens) {
+  fresh();
+  /* Bug: the members icon showed nobody. Opening a group pushes room_members
+   * from the core roster (members and open invitations). */
+  mock_set_roster(
+    "[{\"call\":\"X1ARKL\",\"role\":\"admin\",\"state\":\"member\"},"
+    " {\"call\":\"X16JK8\",\"role\":\"member\",\"state\":\"member\"},"
+    " {\"call\":\"X1WATT\",\"role\":\"invited\",\"state\":\"invited\"}]");
+  cap_clear();
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"#X5ROOM\"}");
+  module_handle_event();
+  const char *m = cap_find("ui.people.set");
+  CHECK(m && strstr(m, "room_members"));
+  CHECK(m && strstr(m, "X1ARKL") && strstr(m, "X16JK8") && strstr(m, "X1WATT"));
+  CHECK(m && strstr(m, "Members") && strstr(m, "Invited"));
+  mock_set_roster("[]");
+}
+
+TEST(a_group_we_belong_to_gets_a_room_the_moment_it_exists) {
+  fresh();
+  /* The user's bug: creating a group (or accepting into one) must surface a
+   * chat room without waiting for the first message. A group we BELONG to
+   * (admin/member/mod) gets a room; one we are only invited to does not. */
+  mock_set_groups(
+    "[{\"call\":\"X5MINE\",\"nick\":\"mine\",\"role\":\"admin\"},"
+    " {\"call\":\"X5MEMB\",\"nick\":\"memb\",\"role\":\"member\"},"
+    " {\"call\":\"X5OFFR\",\"nick\":\"offer\",\"role\":\"invited\"}]");
+  event_push("core.groups", "{}");
+  module_handle_event();
+  CHECK(room_known("#X5MINE"));   /* admin — ours */
+  CHECK(room_known("#X5MEMB"));   /* member — ours */
+  CHECK(!room_known("#X5OFFR"));  /* invited only — not ours to open */
+  mock_set_groups("[]");
+}
+
+TEST(a_closed_group_post_renders_from_either_shape_the_core_delivers) {
+  fresh();
+  /* 13.11.3: a closed group's post is a PLAIN BROADCAST, so it arrives as a
+   * heard packet (fields, no `content`) and must render like an open-group
+   * bulletin -- not be dropped as "the other shape". The sealed/reassembled
+   * shape (`content`) renders too. WHO may post is the core's decision at its
+   * receive door (26.7); whatever reaches this wapp, it shows. */
+  inbox_set("{\"command\":\"rooms_open\",\"rooms_convo\":\"#X5ROOM\"}");
+  module_handle_event();
+
+  cap_clear();
+  event_push("xprs.message",
+    "{\"id\":\"gp0001\",\"type\":\"message\",\"from\":\"X1PEER\",\"to\":\"X5ROOM\",\"fields\":[[\"t\",\"message\"],[\"f\",\"X1PEER\"],[\"d\",\"X5ROOM\"],[\"m\",\"plain post\"]],\"scope\":\"global\",\"bearer\":\"lan\",\"sig\":\"verified\"}");
+  module_handle_event();
+  CHECK(cap_count("ui.convo.msg") == 1);
+
+  cap_clear();
+  event_push("xprs.message",
+    "{\"id\":\"gm0001\",\"type\":\"message\",\"from\":\"9f\",\"call\":\"X1PEER\",\"sig\":\"verified\",\"to\":\"\",\"content\":\"content post\",\"title\":\"#X5ROOM\",\"ts\":1700000400,\"forUs\":true,\"bearer\":\"rns\",\"sealed\":false}");
+  module_handle_event();
+  CHECK(cap_count("ui.convo.msg") == 1);
+}
+
 TEST(a_message_read_live_in_the_open_room_flushes_its_receipt_now) {
   fresh();
   mock_reads_clear();
@@ -468,6 +558,10 @@ int main(void) {
   run_a_read_receipt_is_asked_for_on_open_and_survives_the_other_engine();
   run_a_1to1_like_is_a_directed_reaction_65();
   run_a_1to1_reaction_addressed_to_us_is_applied_and_local_still_routes();
+  run_finding_a_group_opens_the_group_room_and_the_core_decides_posting();
+  run_the_member_panel_lists_the_roster_when_a_group_opens();
+  run_a_group_we_belong_to_gets_a_room_the_moment_it_exists();
+  run_a_closed_group_post_renders_from_either_shape_the_core_delivers();
   run_a_message_read_live_in_the_open_room_flushes_its_receipt_now();
   run_opening_a_thread_acks_read_for_older_unacked_messages_too();
   run_rooms_survive_a_restart_and_kv_is_cleaned_once();

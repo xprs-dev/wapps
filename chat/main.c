@@ -147,9 +147,15 @@ static void xgroups_refresh(void) {
     jstr(obj, "role", g_xgroup[k].role, sizeof(g_xgroup[k].role));
     if (!g_xgroup[k].call[0]) continue;
     g_xgroup_n++;
-    /* A room that already exists learns its name; none is created. */
+    /* A group we BELONG to gets a room, so it appears the moment it exists --
+     * an admin who just created a group, or a member who just accepted, sees
+     * the conversation without waiting for the first message (26). A group we
+     * are only invited to, or a stranger's, is not ours to open: an existing
+     * room learns its name, but none is created. */
     char id[10] = "#"; s_cat(id, g_xgroup[k].call, sizeof(id));
-    if (room_known(id)) { char t[48]; room_title(id, t, sizeof(t)); room_set_title(id, t); }
+    char t[48]; room_title(id, t, sizeof(t));
+    if (xgroup_may_post(g_xgroup[k].call)) room_ensure(id, t);
+    else if (room_known(id)) room_set_title(id, t);
   }
 }
 
@@ -332,10 +338,6 @@ static void send_message(const char *id, const char *text_in) {
    * callsign. The core signs after us and the section 5 id is taken with
    * sig: removed, so these bytes are the id. */
   if (xgroup_is(id)) {
-    if (!xgroup_may_post(id + 1)) {
-      notify("warning", "You can post here once you accept the invitation");
-      return;
-    }
     char parent[8]; strip_reply6(text, parent);
     if (!text[0]) return;
     char ts[24]; xprs_stamp(ts, sizeof(ts), hal_time_epoch());
@@ -346,7 +348,11 @@ static void send_message(const char *id, const char *text_in) {
     if (parent[0]) { s_cat(wire, " r:", sizeof(wire)); s_cat(wire, parent, sizeof(wire)); }
     s_cat(wire, " m:", sizeof(wire)); s_cat(wire, text, sizeof(wire));
     if (s_len(wire) > 250) { notify("warning", "Message too long"); return; }
-    if (hal_xprs_send(wire, s_len(wire)) != 0) { notify("warning", "Could not send"); return; }
+    /* Whether we may post here is the CORE's decision (26.7), given back as
+     * the send result; this wapp only says it in words. */
+    int32_t rc = hal_xprs_send(wire, s_len(wire));
+    if (rc == -2) { notify("warning", "You can post here once you accept the invitation"); return; }
+    if (rc != 0) { notify("warning", "Could not send"); return; }
     char gmid[7]; xprs_id(wire, s_len(wire), gmid);
     admit(id, gmid, "out", g_call, text, parent, "", "verified", 0, 0, "", "", 0);
     return;
@@ -455,10 +461,14 @@ static void on_core_packet(const char *topic, const char *row) {
   if (!s_eq(topic, "xprs.message")) return;
   char m[900] = "";
   if (!jfield(row, "m", m, sizeof(m)) || !m[0]) return;
-  /* Addressed to a station -- including a closed group, which is a station
-   * by 6.3's naming rule -- is correspondence and renders from the other
-   * shape. */
-  if (xprs_is_station(to)) return;
+  /* A closed group's callsign is an X5 station by 6.3's naming, but a post to
+   * it is a PLAIN BROADCAST (13.11.3, "a group is an address, not a boundary")
+   * and renders HERE like an open-group bulletin, filtered by the roster
+   * (26.7). The one that renders from the other shape (content) is a 1:1 with
+   * an ordinary station, so only that bails. */
+  char gid[24] = "#"; s_cat(gid, to, sizeof(gid));
+  int closed = xgroup_is(gid);
+  if (xprs_is_station(to) && !closed) return;
   char parent[8] = ""; jfield(row, "r", parent, sizeof(parent));
   uint64_t ts = 0;
   { char t[24]; if (jfield(row, "ts", t, sizeof(t))) ts = xprs_parse_stamp(t); }
@@ -480,8 +490,11 @@ static void on_core_packet(const char *topic, const char *row) {
     return;
   }
 
-  /* An open-group bulletin. Only for a group we are in: the room exists. */
-  char gid[24] = "#"; s_cat(gid, to, sizeof(gid));
+  /* An open-group bulletin, or a closed group's plain post. Only for a group
+   * we are in: the room exists (a closed group we belong to got its room the
+   * moment it existed). Who may post in a closed group is the CORE's to
+   * decide, at its receive door (26.7): a post that reaches this wapp is one
+   * it may show. */
   if (!room_known(gid)) return;
   char lmid[70]; int unlike; const char *ck; char tgt[5];
   if (votemark_parse(m, lmid, &unlike, &ck)) { room_react(gid, lmid, from, unlike, 0); return; }
@@ -553,6 +566,8 @@ static void on_core_event(const char *topic, const char *row) {
         s_eq(sigv, "verified") ? "verified" : "", jbool(row, "sealed"), ts, "", "", 0);
 }
 
+static void push_group_members(const char *gid);
+
 static void drain_core_events(void) {
   static char row[3200];
   char topic[64];
@@ -561,7 +576,13 @@ static void drain_core_events(void) {
     uint32_t n = hal_event_recv(topic, sizeof(topic) - 1, row, sizeof(row) - 1);
     if (n == 0) break;
     row[n] = 0;
-    if (s_eq(topic, "core.groups")) { xgroups_refresh(); continue; }
+    if (s_eq(topic, "core.groups")) {
+      xgroups_refresh();
+      /* A roster that changed while its room is open updates the panel now. */
+      const char *open = room_open_id();
+      if (xgroup_is(open)) push_group_members(open);
+      continue;
+    }
     on_core_event(topic, row);
   }
 }
@@ -671,12 +692,17 @@ static void people_collect(const char *q) {
   }
 }
 static void people_row(char *o, unsigned sz, const person_t *e) {
-  s_cat(o, "{\"id\":\"go:", sz); jesc(o, sz, e->call);
+  /* A closed group heard on the air is a group, not a person: it opens the
+   * #X5 room (go:#...), tagged, so tapping it enters the group and not a 1:1
+   * with the group's address. */
+  int grp = e->call[0] == 'X' && e->call[1] == '5';
+  s_cat(o, "{\"id\":\"go:", sz); if (grp) s_cat(o, "#", sz); jesc(o, sz, e->call);
   s_cat(o, "\",\"title\":\"", sz); jesc(o, sz, e->call);
   s_cat(o, "\",\"subtitle\":\"", sz);
   if (e->seen[0]) jesc(o, sz, e->seen); else s_cat(o, "heard", sz);
   if (e->bearer[0]) { s_cat(o, " - ", sz); jesc(o, sz, e->bearer); }
-  s_cat(o, "\",\"icon\":\"person\"}", sz);
+  s_cat(o, "\",\"icon\":\"", sz); s_cat(o, grp ? "tag" : "person", sz);
+  s_cat(o, "\"}", sz);
 }
 static void render_people(const char *field, const char *q, int allow_group) {
   static char o[16384]; const unsigned sz = sizeof(o);
@@ -722,12 +748,68 @@ static void render_people(const char *field, const char *q, int allow_group) {
   s_cat(o, "]}", sz);
   hal_msg_send(o, s_len(o));
 }
+/* The member panel (rooms widget, field "room_members"). The host draws it
+ * from whatever we last pushed, so we push it whenever a group room opens --
+ * membership decides what a client SHOWS (26.7), and the roster is the core's.
+ * Two sections: full members, and open invitations (26.3.1: not members yet).
+ * `gid` is "#X5....". */
+static void push_group_members(const char *gid) {
+  if (!xgroup_is(gid)) return;
+  static char rb[4096];
+  int n = hal_xprs_group_roster(gid, s_len(gid), rb, sizeof(rb) - 1);
+  if (n < 0 || n >= (int)sizeof(rb)) return;
+  rb[n < 0 ? 0 : n] = 0;
+  static char o[8192]; const unsigned sz = sizeof(o);
+  s_cpy(o, "{\"type\":\"ui.people.set\",\"field\":\"room_members\",\"sections\":[", sz);
+  /* Two passes over the same flat array: members first, then invited. */
+  const char *want[2] = { "member", "invited" };
+  const char *label[2] = { "Members", "Invited" };
+  int first_sec = 1;
+  for (int pass = 0; pass < 2; pass++) {
+    const char *cur = rb; char obj[128]; int any = 0; char body[3072]; body[0] = 0;
+    while (next_object(&cur, obj, sizeof(obj))) {
+      char st[12] = "", call[16] = "", role[12] = "";
+      jstr(obj, "state", st, sizeof(st));
+      if (!s_eq(st, want[pass])) continue;
+      jstr(obj, "call", call, sizeof(call));
+      jstr(obj, "role", role, sizeof(role));
+      if (!call[0]) continue;
+      if (any) s_cat(body, ",", sizeof(body));
+      any = 1;
+      s_cat(body, "{\"id\":\"go:", sizeof(body)); jesc(body, sizeof(body), call);
+      s_cat(body, "\",\"title\":\"", sizeof(body)); jesc(body, sizeof(body), call);
+      if (is_self_call(call)) s_cat(body, " (you)", sizeof(body));
+      s_cat(body, "\",\"subtitle\":\"", sizeof(body));
+      jesc(body, sizeof(body), role[0] ? role : (pass ? "invited" : "member"));
+      s_cat(body, "\",\"icon\":\"person\"}", sizeof(body));
+    }
+    if (!any) continue;
+    if (!first_sec) s_cat(o, ",", sz);
+    first_sec = 0;
+    s_cat(o, "{\"title\":\"", sz); s_cat(o, label[pass], sz);
+    s_cat(o, "\",\"items\":[", sz); s_cat(o, body, sz); s_cat(o, "]}", sz);
+  }
+  s_cat(o, "]}", sz);
+  hal_msg_send(o, s_len(o));
+}
+
 static void go_tap(const char *buf, const char *key) {
   char id[64] = "";
   jstr(buf, key, id, sizeof(id));
-  if (!s_pre(id, "go:") || !room_renderable(id + 3)) return;
-  char title[48]; room_title(id + 3, title, sizeof(title));
-  room_start(id + 3, title);
+  if (!s_pre(id, "go:")) return;
+  const char *target = id + 3;
+  /* A closed group's callsign (X5..., 6.3's naming) opens the GROUP room
+   * (#X5), never a 1:1 with the group address. This is the difference between
+   * a post gated by membership (26.7) and an ungated direct message: a
+   * non-member who finds a group must land in the group room, where the send
+   * path refuses their post, not in a private thread that lets it out. */
+  char gid[24];
+  if (target[0] == 'X' && target[1] == '5') {
+    gid[0] = '#'; s_cpy(gid + 1, target, sizeof(gid) - 1); target = gid;
+  }
+  if (!room_renderable(target)) return;
+  char title[48]; room_title(target, title, sizeof(title));
+  room_start(target, title);
   screen_close();
 }
 
@@ -776,6 +858,9 @@ static void do_open(const char *buf) {
     uint64_t now = hal_time_epoch();
     if (now - g_xroom_fill_at >= 60) { g_xroom_fill_at = now; xroom_backfill(); }
   }
+  /* A closed group's member panel is the roster, pushed now so it is ready
+   * the moment the header's group button is tapped. */
+  if (xgroup_is(convo)) push_group_members(convo);
 }
 
 /* ── module entry points ──────────────────────────────────────────────── */

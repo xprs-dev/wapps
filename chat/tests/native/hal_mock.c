@@ -100,7 +100,10 @@ int32_t hal_kv_delete(const char* k,uint32_t kl){ int i=kv_find(k,kl); if(i<0) r
 static int g_bcast_n=0; static char g_last_wire[1024]; static char g_history[65536]="[]";
 const char* mock_last_wire(void){ return g_last_wire; }
 void mock_set_history(const char* json){ snprintf(g_history,sizeof(g_history),"%s",json); }
-int32_t hal_xprs_send(const char* w,uint32_t l){ if(l>=sizeof(g_last_wire)) return -1; memcpy(g_last_wire,w,l); g_last_wire[l]=0; return 0; }
+/* The core's answer to a send: 0 aired, -2 "not a member of that group". */
+static int32_t g_send_rc = 0;
+void mock_set_send_rc(int32_t rc){ g_send_rc = rc; }
+int32_t hal_xprs_send(const char* w,uint32_t l){ if(g_send_rc) return g_send_rc; if(l>=sizeof(g_last_wire)) return -1; memcpy(g_last_wire,w,l); g_last_wire[l]=0; return 0; }
 int32_t hal_xprs_message(const char* to,uint32_t tl,const char* t,uint32_t l,uint32_t priv,char* id,uint32_t cap){ (void)to;(void)tl;(void)t;(void)l; snprintf(id,cap,"m%05d",++g_bcast_n); return priv?1:2; }
 int32_t hal_xprs_broadcast(const char* t,uint32_t l,const char* s,uint32_t sl,const char* r,uint32_t rl,char* id,uint32_t cap){ (void)t;(void)l;(void)s;(void)sl;(void)r;(void)rl; snprintf(id,cap,"b%05d",++g_bcast_n); return 2; }
 static char g_reads[2048]; static int g_reads_n=0;
@@ -109,7 +112,12 @@ int mock_reads_count(void){ return g_reads_n; }
 void mock_reads_clear(void){ g_reads[0]=0; g_reads_n=0; }
 int32_t hal_xprs_read(const char* id,uint32_t l){ (void)l; size_t u=strlen(g_reads); snprintf(g_reads+u,sizeof(g_reads)-u,"[%s]",id); g_reads_n++; return 0; }
 int32_t hal_xprs_history(const char* q,uint32_t ql,char* o,uint32_t cap){ (void)q;(void)ql; uint32_t n=strlen(g_history); if(n>cap) return -(int32_t)n; memcpy(o,g_history,n); return n; }
-int32_t hal_xprs_groups(char* o,uint32_t cap){ const char* s="[]"; uint32_t n=strlen(s); if(n>cap) return -2; memcpy(o,s,n); return n; }
+static char g_groups[2048] = "[]";
+void mock_set_groups(const char* json){ snprintf(g_groups,sizeof(g_groups),"%s",json&&json[0]?json:"[]"); }
+int32_t hal_xprs_groups(char* o,uint32_t cap){ uint32_t n=strlen(g_groups); if(n>cap) return -(int32_t)n; memcpy(o,g_groups,n); return n; }
+static char g_roster[2048] = "[]";
+void mock_set_roster(const char* json){ snprintf(g_roster,sizeof(g_roster),"%s",json&&json[0]?json:"[]"); }
+int32_t hal_xprs_group_roster(const char* g,uint32_t gl,char* o,uint32_t cap){ (void)g;(void)gl; uint32_t n=strlen(g_roster); if(n>cap) return -(int32_t)n; memcpy(o,g_roster,n); return n; }
 int32_t hal_xprs_stations(char* o,uint32_t cap){ const char* s="[{\"title\":\"Heard over the air (2)\",\"items\":[{\"id\":\"X1NEAR\",\"title\":\"X1NEAR\",\"subtitle\":\"BLE - -40 dBm - 3 packets\",\"tags\":[\"seen 20s ago\",\"BLE\",\"peers 2\"]},{\"id\":\"X1TEST\",\"title\":\"X1TEST\",\"subtitle\":\"BLE\",\"tags\":[\"seen 5s ago\",\"BLE\"]}]},{\"title\":\"Heard this hour (1)\",\"items\":[{\"id\":\"X1EARLIER\",\"title\":\"X1EARLIER\",\"subtitle\":\"LAN\",\"tags\":[\"seen 40m ago\",\"LAN\"]}]},{\"title\":\"On Reticulum (1)\",\"items\":[{\"id\":\"X1FAR\",\"title\":\"X1FAR\",\"subtitle\":\"RNS\",\"tags\":[\"seen 3m ago\",\"RNS\"]}]}]"; uint32_t n=strlen(s); if(n>cap) return -(int32_t)n; memcpy(o,s,n); return n; }
 int32_t hal_mesh_devices(char* o,uint32_t cap){ const char* s="[{\"title\":\"Nearby\",\"items\":[{\"id\":\"X1NEAR\",\"title\":\"X1NEAR\",\"subtitle\":\"phone\"}]},{\"title\":\"Multi-hop\",\"items\":[{\"id\":\"X1FAR\",\"title\":\"X1FAR\"}]}]"; uint32_t n=strlen(s); if(n>cap) return -(int32_t)n; memcpy(o,s,n); return n; }
 int32_t hal_people_directory(const char* q,uint32_t ql,char* o,uint32_t cap){ (void)q;(void)ql; const char* s="[{\"kind\":\"xprs\",\"callsign\":\"X1PEER\",\"nick\":\"Peer\",\"live\":true}]"; uint32_t n=strlen(s); if(n>cap) return -2; memcpy(o,s,n); return n; }

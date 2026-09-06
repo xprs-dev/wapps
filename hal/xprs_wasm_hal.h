@@ -1444,7 +1444,10 @@ int32_t hal_xprs_status(const char *text, uint32_t text_len,
 
 /* Air one caller-composed XPRS wire. The host validates section 4 syntax,
  * signs it when it speaks as this station and carries no sig:, applies the
- * scope rules (13.11) and spools its own copy. 0 queued, -1 invalid. */
+ * scope rules (13.11) and spools its own copy. 0 queued, -1 invalid,
+ * -2 refused: a post to a closed group this station is not a member of
+ * (26.7) -- the core's decision, the same one its publisher applies to every
+ * caller; a wapp only puts it into words. */
 __attribute__((import_module("hal"), import_name("xprs_send")))
 int32_t hal_xprs_send(const char *wire, uint32_t wire_len);
 
@@ -1556,6 +1559,15 @@ int32_t hal_xprs_history(const char *query, uint32_t query_len,
  * Returns bytes written, negated size if out is small. */
 __attribute__((import_module("hal"), import_name("xprs_groups")))
 int32_t hal_xprs_groups(char *out, uint32_t out_cap);
+
+/* One closed group's roster as a flat JSON array [{"call","role","state"}] --
+ * the callsigns the member panel shows (hal_xprs_groups only COUNTS them).
+ * `state` is "member" (role member/mod/admin) or "invited" (an open offer,
+ * 26.3.1: not a member yet). The group's own callsign is never listed. Bytes
+ * written, negated size if `out` is small, 0 for an empty/nameless group. */
+__attribute__((import_module("hal"), import_name("xprs_group_roster")))
+int32_t hal_xprs_group_roster(const char *group, uint32_t group_len,
+                              char *out, uint32_t out_cap);
 
 /* Set a spool tunable "key=value": archive (0/1), archiveMaxMb,
  * archiveMaxDays, serveHistory (0/1 — answer cmd:history and say
